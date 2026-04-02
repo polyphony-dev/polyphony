@@ -200,24 +200,31 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
         collect_io(self.hdlmodule, self.hdlmodule, tuple())
         if not env.config.flatten_modules:
-            # Register connector signals as I/O ports based on submodule port direction
+            # Determine whether submodule connectors should be I/O ports:
+            # - If parent has workers, they drive submodule ports internally
+            #   → connectors are internal wires (not I/O)
+            # - If parent has no workers, testbench accesses submodule ports
+            #   via parent I/O → connectors become I/O ports
+            has_workers = len(self.hdlmodule.scope.workers) > 0
             for _, _, connections, _ in self.hdlmodule.sub_modules.values():
                 for sub_var, connector in connections:
-                    # Match submodule port width and signedness
                     connector.width = sub_var.sig.width
-                    # Copy int tag for signed output
                     if sub_var.sig.is_int():
                         connector.add_tag('int')
-                    if sub_var.sig.is_input():
-                        # Submodule input → parent input (wire)
-                        connector.tags.discard('reg')
-                        connector.tags.discard('initializable')
-                        connector.add_tag({'net', 'input'})
-                        self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
-                    elif sub_var.sig.is_output():
-                        # Submodule output → parent output (wire)
-                        connector.add_tag('output')
-                        self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.LOAD))
+                    if has_workers:
+                        # Internal wiring: parent worker drives/reads connectors
+                        # Keep original reg/net tags from connectors()
+                        pass
+                    else:
+                        # Expose as I/O for testbench access
+                        if sub_var.sig.is_input():
+                            connector.tags.discard('reg')
+                            connector.tags.discard('initializable')
+                            connector.add_tag({'net', 'input'})
+                            self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
+                        elif sub_var.sig.is_output():
+                            connector.add_tag('output')
+                            self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.LOAD))
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
