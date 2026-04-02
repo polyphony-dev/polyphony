@@ -4147,8 +4147,8 @@ def test():
         for s in top.children:
             RestrictionChecker().process(s)
 
-    def test_restriction_new_module_with_module_object_arg_fails(self):
-        """RestrictionChecker: module with module-instance arg still fails."""
+    def test_restriction_new_module_with_module_object_arg_passes(self):
+        """RestrictionChecker: module with module-instance arg is allowed."""
         typed, _ = _translate_and_specialize('''
 from polyphony import module, testbench
 from polyphony.io import Port
@@ -4176,9 +4176,8 @@ def test():
     m = Top(s)
 ''')
         top = env.scopes[env.global_scope_name]
-        with pytest.raises(CompileError):
-            for s in top.children:
-                RestrictionChecker().process(s)
+        for s in top.children:
+            RestrictionChecker().process(s)
 
 
 # =========================================================

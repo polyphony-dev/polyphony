@@ -403,6 +403,8 @@ class RestrictionChecker(IrVisitor):
                         continue
                     if arg_t.is_object() and not arg_t.scope.is_module():
                         continue
+                    if arg_t.is_object() and arg_t.scope.is_module():
+                        continue
                     fail(self.current_stm, Errors.MODULE_ARG_MUST_BE_X_TYPE, [arg_t])
         if self.scope.is_global() and not callee_scope.is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)
