@@ -69,6 +69,7 @@ from . import typing
 @timing.timed
 @module
 @inlinelib
+@mutable_fields
 class Channel:
     def __init__(self, dtype:type, capacity=4):
         self.din:dtype = 0

@@ -539,9 +539,16 @@ class InlineOpt(object):
     Builds a call graph, processes leaf callees first, inlines function bodies
     into callers by cloning callee blocks and merging them into the caller's
     block structure.
+
+    Args:
+        flatten_mode: If True, inline submodule ctors into parent (flatten behavior).
+                      If False, skip inlining submodule ctors (individual compilation).
     """
 
     inline_counts = 0
+
+    def __init__(self, flatten_mode=False):
+        self._flatten_mode = flatten_mode
 
     def process_scopes(self, scopes):
         from .typeprop import TypePropagation
@@ -565,8 +572,8 @@ class InlineOpt(object):
                     continue
                 if caller.is_namespace() and callee.is_method():
                     continue
-                # When not flattening, don't inline submodule ctors into parent module ctors
-                if not env.config.flatten_modules:
+                # In individual mode, don't inline submodule ctors into parent module ctors
+                if not self._flatten_mode:
                     if callee.is_ctor() and callee.parent.is_module() and not callee.parent.is_top_module():
                         continue
                 ret = self._inlining(caller, callee, call_irs)

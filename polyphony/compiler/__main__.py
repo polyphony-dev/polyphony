@@ -73,7 +73,7 @@ from .frontend.python.pure import interpret, PureCtorBuilder, PureFuncExecutor
 
 from .target.verilog.vericodegen import VerilogCodeGen
 from .target.verilog.veritestgen import VerilogTestGen
-from .target.verilog.flatten import FlattenSignals
+from .target.verilog.flatten import FlattenSignals, FlattenSignalsIndividual
 
 import logging
 logger = logging.getLogger()
@@ -163,24 +163,21 @@ def is_not_static_scope(scope):
     return not is_static_scope(scope)
 
 
-def is_inlined_module(scope):
-    if not env.config.flatten_modules:
-        return False
+def _is_inlined_module(scope):
+    """Flatten-only: check if scope is a submodule that gets inlined into parent."""
     if scope.is_namespace():
         return False
     elif (scope.is_module()
         and scope.is_instantiated()
         and not scope.parent is Scope.global_scope()):
         return True
-    elif is_inlined_module(scope.parent):
+    elif _is_inlined_module(scope.parent):
         return True
     return False
 
 
 def is_uninlined_scope(scope):
     if is_static_scope(scope):
-        return False
-    if is_inlined_module(scope):
         return False
     # Lambda scopes with parameters are always inlined at call sites;
     # they should not survive as standalone scopes after inline_opt.
@@ -195,10 +192,38 @@ def is_uninlined_scope(scope):
             )
 
 
-def is_hdlmodule_scope(scope):
-    if is_inlined_module(scope):
+def is_uninlined_scope_flatten(scope):
+    if is_static_scope(scope):
         return False
-    return HDLModule.is_hdlmodule_scope(scope)
+    if _is_inlined_module(scope):
+        return False
+    # Lambda scopes with parameters are always inlined at call sites;
+    # they should not survive as standalone scopes after inline_opt.
+    if scope.is_comb() and len(scope.param_symbols()) > 0:
+        return False
+    return (scope.is_function_module()
+            or scope.is_ctor() and scope.parent.is_module()
+            or scope.is_worker()
+            or scope.is_testbench()
+            or scope.is_assigned()
+            or scope.is_closure() and scope.parent and is_uninlined_scope_flatten(scope.parent)
+            )
+
+
+def is_hdlmodule_scope(scope):
+    if scope.is_module() and scope.is_instantiated():
+        return True
+    return ((scope.is_top_module() and scope.is_instantiated())
+            or scope.is_function_module()
+            or scope.is_testbench())
+
+
+def is_hdlmodule_scope_flatten(scope):
+    if _is_inlined_module(scope):
+        return False
+    return ((scope.is_top_module() and scope.is_instantiated())
+            or scope.is_function_module()
+            or scope.is_testbench())
 
 
 def dump_source(driver):
@@ -535,7 +560,11 @@ def _resolve_type_scope_name(ptype):
 
 
 def apply_argument(driver):
-    ArgumentApplier().process_all()
+    ArgumentApplier(flatten_mode=False).process_all()
+
+
+def apply_argument_flatten(driver):
+    ArgumentApplier(flatten_mode=True).process_all()
 
 
 def propagate_free_var_constants(driver, scope):
@@ -585,7 +614,14 @@ def propagate_free_var_constants(driver, scope):
 
 
 def inline_opt(driver):
-    scopes = InlineOpt().process_scopes(driver.current_scopes)
+    scopes = InlineOpt(flatten_mode=False).process_scopes(driver.current_scopes)
+    for s in scopes:
+        assert s.name in env.scopes
+        driver.insert_scope(s)
+
+
+def inline_opt_flatten(driver):
+    scopes = InlineOpt(flatten_mode=True).process_scopes(driver.current_scopes)
     for s in scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
@@ -740,18 +776,18 @@ def remove_flattened_object_fields(driver):
             scope.del_sym(name)
 
 
-def createhdlscope(driver):
+def _createhdlscope_impl(driver, is_hdlmodule_func):
     scopes = deque(driver.all_scopes())
     visited = set()
     while scopes:
         scope = scopes.popleft()
         if scope in visited:
             continue
-        if not HDLModule.is_hdlmodule_scope(scope) and not is_static_scope(scope):
+        if not is_hdlmodule_func(scope) and not is_static_scope(scope):
             continue
         if scope.parent:
             scopes.append(scope.parent)
-        if HDLModule.is_hdlmodule_scope(scope):
+        if is_hdlmodule_func(scope):
             hdl = HDLModule(scope, scope.base_name, scope.qualified_name())
         else:
             hdl = HDLScope(scope, scope.base_name, scope.qualified_name())
@@ -762,6 +798,14 @@ def createhdlscope(driver):
                 if env.hdlscope(b) is None:
                     basemodule = HDLModule(b, b.base_name, b.qualified_name())
                     env.append_hdlscope(basemodule)
+
+
+def createhdlscope(driver):
+    _createhdlscope_impl(driver, is_hdlmodule_scope)
+
+
+def createhdlscope_flatten(driver):
+    _createhdlscope_impl(driver, is_hdlmodule_scope_flatten)
 
 
 def stg(driver, scope):
@@ -898,20 +942,8 @@ def printresouces(driver, scope):
         print(resources)
 
 
-def compile_plan():
-    def dbg(proc):
-        return proc if env.dev_debug_mode else None
-
-    def ahdlopt(proc):
-        return proc if env.enable_ahdl_opt else None
-
-    def pure(proc):
-        return proc if env.config.enable_pure else None
-
-    def flatten(proc):
-        return proc if env.config.flatten_modules else None
-
-    plan = [
+def _plan_part1():
+    return [
         apply_api_types,
         if_trans,
         detect_loops,
@@ -955,17 +987,21 @@ def compile_plan():
         phase(env.PHASE_1),
 
         synthcheck,
-        inline_opt,
+    ]
 
-        filter_scope(is_uninlined_scope),
-        flatten(flattenmodule),
 
+def _plan_part2():
+    def dbg(proc):
+        return proc if env.dev_debug_mode else None
+
+    def ahdlopt(proc):
+        return proc if env.enable_ahdl_opt else None
+
+    return [
         setsynthparams,
         reduce_blk,
         earlypathexp,
         phase(env.PHASE_2),
-        # TODO: Enable/disable flatten
-        # flattenmodule,
 
         objssa,
         objcopyopt,
@@ -982,12 +1018,17 @@ def compile_plan():
         deadcode,
 
         phase(env.PHASE_3),
-        apply_argument,
-        propagate_free_var_constants,
-        eval_type,
-        strict_type_prop,
-        type_check,
+    ]
 
+
+def _plan_part3():
+    def dbg(proc):
+        return proc if env.dev_debug_mode else None
+
+    def ahdlopt(proc):
+        return proc if env.enable_ahdl_opt else None
+
+    return [
         copyopt,
         objcopyopt,
         constopt,
@@ -1014,8 +1055,17 @@ def compile_plan():
         assertioncheck,
 
         remove_flattened_object_fields,
-        createhdlscope,
-        filter_scope(is_hdlmodule_scope),
+    ]
+
+
+def _plan_part4():
+    def dbg(proc):
+        return proc if env.dev_debug_mode else None
+
+    def ahdlopt(proc):
+        return proc if env.enable_ahdl_opt else None
+
+    return [
         stg,
         dbg(dumpstg),
         buildmodule,
@@ -1036,8 +1086,64 @@ def compile_plan():
         dbg(dumpmodule),
         canonicalize,
     ]
-    plan = [p for p in plan if p is not None]
-    return plan
+
+
+def _compile_plan_flatten():
+    plan = (
+        _plan_part1()
+        + [
+            inline_opt_flatten,
+            filter_scope(is_uninlined_scope_flatten),
+            flattenmodule,
+        ]
+        + _plan_part2()
+        + [
+            apply_argument_flatten,
+            propagate_free_var_constants,
+            eval_type,
+            strict_type_prop,
+            type_check,
+        ]
+        + _plan_part3()
+        + [
+            createhdlscope_flatten,
+            filter_scope(is_hdlmodule_scope_flatten),
+        ]
+        + _plan_part4()
+    )
+    return [p for p in plan if p is not None]
+
+
+def _compile_plan_individual():
+    plan = (
+        _plan_part1()
+        + [
+            inline_opt,
+            filter_scope(is_uninlined_scope),
+        ]
+        + _plan_part2()
+        + [
+            apply_argument,
+            propagate_free_var_constants,
+            eval_type,
+            strict_type_prop,
+            type_check,
+        ]
+        + _plan_part3()
+        + [
+            createhdlscope,
+            filter_scope(is_hdlmodule_scope),
+        ]
+        + _plan_part4()
+    )
+    return [p for p in plan if p is not None]
+
+
+def compile_plan():
+    if env.config.flatten_modules:
+        return _compile_plan_flatten()
+    else:
+        return _compile_plan_individual()
 
 
 def initialize():
@@ -1158,20 +1264,32 @@ def compile_main(src_file, options):
 
 
 def output_plan():
-    plan = [
-        filter_scope(is_hdlmodule_scope),
-        # We may make our own modifications to the normalized (Interpretable)
-        # HDL module for the target output (e.g. VerilogHDL).
-        # To do so, we generate a copy of the normalized HDL module,
-        # make changes to the copy, and pass it to the output process.
+    if env.config.flatten_modules:
+        return _output_plan_flatten()
+    else:
+        return _output_plan_individual()
+
+
+def _output_plan_flatten():
+    return [
+        filter_scope(is_hdlmodule_scope_flatten),
         clone_output_module,
         dumpmodule,
-        # TODO: Enable/disable flatten
+        ahdl_flatten_signals_flatten,
+        dumpmodule,
+        output_verilog,
+    ]
+
+
+def _output_plan_individual():
+    return [
+        filter_scope(is_hdlmodule_scope),
+        clone_output_module,
+        dumpmodule,
         ahdl_flatten_signals,
         dumpmodule,
         output_verilog,
     ]
-    return plan
 
 
 def output_hdl(plan, compiled_scopes, options, stage_offset):
@@ -1194,6 +1312,11 @@ def ahdl_flatten_static_field(driver, scope):
 
 
 def ahdl_flatten_signals(driver, scope):
+    hdlmodule = env.output_hdlscope(scope)
+    FlattenSignalsIndividual().process(hdlmodule)
+
+
+def ahdl_flatten_signals_flatten(driver, scope):
     hdlmodule = env.output_hdlscope(scope)
     FlattenSignals().process(hdlmodule)
 

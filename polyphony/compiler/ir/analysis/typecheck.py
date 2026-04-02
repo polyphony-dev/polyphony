@@ -280,6 +280,8 @@ class TypeChecker(IrVisitor):
         if root_sym is None:
             return
         if root_sym.typ.is_object() and root_sym.typ.scope.is_module():
+            if root_sym.typ.scope.is_mutable_fields():
+                return
             fail(self.current_stm, Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE, [dst_attr.attr])
 
     def visit_Phi(self, ir):
@@ -497,6 +499,8 @@ class RestrictionChecker(IrVisitor):
             if root_sym is None:
                 return
             if root_sym.typ.is_object() and root_sym.is_param():
+                if root_sym.typ.scope.is_mutable_fields():
+                    return
                 fail(self.current_stm, Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE, [dst_attr.attr])
 
     def visit_Call(self, ir):

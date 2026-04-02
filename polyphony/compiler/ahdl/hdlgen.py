@@ -16,7 +16,10 @@ class HDLModuleBuilder(object):
     @classmethod
     def create(cls, hdlmodule):
         if hdlmodule.scope.is_module():
-            return HDLTopModuleBuilder()
+            if env.config.flatten_modules:
+                return HDLTopModuleBuilderFlatten()
+            else:
+                return HDLTopModuleBuilder()
         elif hdlmodule.scope.is_testbench():
             return HDLTestbenchBuilder()
         elif hdlmodule.scope.is_function_module():
@@ -110,7 +113,9 @@ class HDLModuleBuilder(object):
 
     def _add_reset_stms(self, fsm, defs:set[tuple[Signal]], uses:set[tuple[Signal]], outputs:set[tuple[Signal]]):
         fsm_name = fsm.name
-        for vars in sorted(defs | outputs, key=lambda v: v[-1].name):
+        # Use only defs (signals written by this FSM) to avoid multi-driver resets
+        # when multiple FSMs reference the same output signal.
+        for vars in sorted(defs, key=lambda v: v[-1].name):
             if vars[0].is_dut():
                 continue
             if vars[-1].is_reg():
@@ -183,48 +188,39 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
 
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
-    def _process_io(self, hdlmodule):
-        def collect_io(topmodule, hdlmodule, prefix_qsig):
-            for sig in hdlmodule.get_signals({'single_port'}, exclude_tags=None, with_base=True):
-                if sig.is_input():
-                    topmodule.add_input(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
-                elif sig.is_output():
-                    topmodule.add_output(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
-            if not env.config.flatten_modules:
-                # In individual compilation mode, submodule ports are exposed
-                # as parent I/O via connector signals from _process_submodules.
-                return
-            for sig in hdlmodule.get_signals({'subscope'}, exclude_tags=None):
-                subscope = hdlmodule.subscopes[sig]
-                collect_io(topmodule, subscope, prefix_qsig + (sig,))
+    """Builder for module scopes in individual compilation mode."""
 
-        collect_io(self.hdlmodule, self.hdlmodule, tuple())
-        if not env.config.flatten_modules:
-            # Determine whether submodule connectors should be I/O ports:
-            # - If parent has workers, they drive submodule ports internally
-            #   → connectors are internal wires (not I/O)
-            # - If parent has no workers, testbench accesses submodule ports
-            #   via parent I/O → connectors become I/O ports
-            has_workers = len(self.hdlmodule.scope.workers) > 0
-            for _, _, connections, _ in self.hdlmodule.sub_modules.values():
-                for sub_var, connector in connections:
-                    connector.width = sub_var.sig.width
-                    if sub_var.sig.is_int():
-                        connector.add_tag('int')
-                    if has_workers:
-                        # Internal wiring: parent worker drives/reads connectors
-                        # Keep original reg/net tags from connectors()
-                        pass
-                    else:
-                        # Expose as I/O for testbench access
-                        if sub_var.sig.is_input():
-                            connector.tags.discard('reg')
-                            connector.tags.discard('initializable')
-                            connector.add_tag({'net', 'input'})
-                            self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
-                        elif sub_var.sig.is_output():
-                            connector.add_tag('output')
-                            self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.LOAD))
+    def _process_io(self, hdlmodule):
+        for sig in hdlmodule.get_signals({'single_port'}, exclude_tags=None, with_base=True):
+            if sig.is_input():
+                hdlmodule.add_input(AHDL_VAR((sig,), Ctx.LOAD))
+            elif sig.is_output():
+                hdlmodule.add_output(AHDL_VAR((sig,), Ctx.LOAD))
+        # Determine whether submodule connectors should be I/O ports:
+        # - If parent has workers, they drive submodule ports internally
+        #   → connectors are internal wires (not I/O)
+        # - If parent has no workers, testbench accesses submodule ports
+        #   via parent I/O → connectors become I/O ports
+        has_workers = len(self.hdlmodule.scope.workers) > 0
+        for _, _, connections, _ in self.hdlmodule.sub_modules.values():
+            for sub_var, connector in connections:
+                connector.width = sub_var.sig.width
+                if sub_var.sig.is_int():
+                    connector.add_tag('int')
+                if has_workers:
+                    # Internal wiring: parent worker drives/reads connectors
+                    # Keep original reg/net tags from connectors()
+                    pass
+                else:
+                    # Expose as I/O for testbench access
+                    if sub_var.sig.is_input():
+                        connector.tags.discard('reg')
+                        connector.tags.discard('initializable')
+                        connector.add_tag({'net', 'input'})
+                        self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
+                    elif sub_var.sig.is_output():
+                        connector.add_tag('output')
+                        self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.LOAD))
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
@@ -244,15 +240,100 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             assert sig
             val = 0 if not p.defval else p.defval.value
             self.hdlmodule.parameters[sig] = val
-        if not env.config.flatten_modules:
-            # Ensure submodule HDLModules have their I/O built first
-            for _, subscope in self.hdlmodule.subscopes.items():
-                if isinstance(subscope, HDLModule) and not getattr(subscope, '_built', False):
-                    sub_builder = HDLModuleBuilder.create(subscope)
-                    if sub_builder:
-                        sub_builder.process(subscope)
-                        subscope._built = True
-            self._process_submodules()
+        # Ensure submodule HDLModules have their I/O built first
+        for _, subscope in self.hdlmodule.subscopes.items():
+            if isinstance(subscope, HDLModule) and not getattr(subscope, '_built', False):
+                sub_builder = HDLModuleBuilder.create(subscope)
+                if sub_builder:
+                    sub_builder.process(subscope)
+                    subscope._built = True
+        self._process_submodules()
+        self._process_io(self.hdlmodule)
+
+        self._collector.process(self.hdlmodule)
+        fsms = list(self.hdlmodule.fsms.values())
+        ctor_array_inits = []
+        for fsm in fsms:
+            if fsm.scope.is_ctor():
+                self._add_roms(self._collector.mem_vars(fsm.name))
+                # remove ctor fsm and add constant parameter assigns
+                for stm in self._collect_moves(fsm):
+                    if isinstance(stm.dst, AHDL_VAR) and stm.dst.sig.is_net():
+                        assign = AHDL_ASSIGN(stm.dst, stm.src)
+                        self.hdlmodule.add_static_assignment(assign, '')
+                    elif isinstance(stm.dst, AHDL_SUBSCRIPT):
+                        # Preserve array element initialization (e.g. ROM table init)
+                        ctor_array_inits.append(stm)
+                self.hdlmodule.remove_sig(fsm.state_var)
+                del self.hdlmodule.fsms[fsm.name]
+            else:
+                self._process_fsm(fsm)
+        # Add ctor array initialization to the first worker FSM's reset block
+        if ctor_array_inits:
+            for fsm in self.hdlmodule.fsms.values():
+                for stm in ctor_array_inits:
+                    self.hdlmodule.add_fsm_reset_stm(fsm.name, stm)
+                break
+
+
+class HDLTopModuleBuilderFlatten(HDLTopModuleBuilder):
+    """Builder for module scopes in flatten compilation mode."""
+
+    def _collect_internally_driven_inputs(self):
+        """Collect input port signals that are written by any FSM via AHDL_IO_WRITE.
+
+        In flatten mode, when one submodule writes to another submodule's input port,
+        that port must become an internal reg rather than a top-level input.
+        """
+        targets = set()
+        def walk(ahdl):
+            if isinstance(ahdl, AHDL_IO_WRITE):
+                if ahdl.io.sig.is_input() and ahdl.io.sig.is_single_port():
+                    targets.add(id(ahdl.io.sig))
+            elif isinstance(ahdl, AHDL_BLOCK):
+                for c in ahdl.codes:
+                    walk(c)
+            elif isinstance(ahdl, AHDL_IF):
+                for b in ahdl.blocks:
+                    walk(b)
+        for fsm in self.hdlmodule.fsms.values():
+            for stg in fsm.stgs:
+                for state in stg.states:
+                    walk(state.block)
+        return targets
+
+    def _process_io(self, hdlmodule):
+        internally_driven_inputs = self._collect_internally_driven_inputs()
+
+        def collect_io(topmodule, hdlmodule, prefix_qsig):
+            for sig in hdlmodule.get_signals({'single_port'}, exclude_tags=None, with_base=True):
+                if sig.is_input():
+                    if id(sig) in internally_driven_inputs:
+                        # Driven by another subscope's FSM — make internal reg
+                        sig.tags.discard('input')
+                        sig.tags.discard('net')
+                        sig.tags.add('reg')
+                        sig.tags.add('initializable')
+                    else:
+                        topmodule.add_input(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
+                elif sig.is_output():
+                    topmodule.add_output(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
+            for sig in hdlmodule.get_signals({'subscope'}, exclude_tags=None):
+                subscope = hdlmodule.subscopes[sig]
+                collect_io(topmodule, subscope, prefix_qsig + (sig,))
+
+        collect_io(self.hdlmodule, self.hdlmodule, tuple())
+
+    def _build_module(self):
+        assert self.hdlmodule.scope.is_module()
+        assert self.hdlmodule.scope.is_class()
+        if not self.hdlmodule.scope.is_instantiated():
+            return
+        for p in self.hdlmodule.scope.module_params:
+            sig = self.hdlmodule.signal(p.sym)
+            assert sig
+            val = 0 if not p.defval else p.defval.value
+            self.hdlmodule.parameters[sig] = val
         self._process_io(self.hdlmodule)
 
         self._collector.process(self.hdlmodule)

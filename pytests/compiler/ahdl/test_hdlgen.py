@@ -250,8 +250,12 @@ def test_add_reset_stms_non_reg_skipped():
     assert len(fsm.reset_stms) == 0
 
 
-def test_add_reset_stms_outputs_included():
-    """_add_reset_stms() processes defs | outputs together."""
+def test_add_reset_stms_outputs_only_not_reset():
+    """_add_reset_stms() only resets defs, not outputs-only signals.
+
+    Signals in outputs but not in defs are read-only in this FSM
+    and should be reset by the FSM that writes them, avoiding multi-driver.
+    """
     scope = build_scope(_SRC_FUNC)
     hdl = make_hdlmodule(scope)
     fsm = _make_fsm(hdl)
@@ -265,7 +269,7 @@ def test_add_reset_stms_outputs_included():
     builder.hdlmodule = hdl
     builder._add_reset_stms(fsm, defs, set(), outputs)
 
-    assert len(fsm.reset_stms) == 2
+    assert len(fsm.reset_stms) == 1
 
 
 # ============================================================

@@ -250,6 +250,7 @@ class Scope(Tagged, SymbolTable):
         "builtin",
         "decorator",
         "port",
+        "mutable_fields",
         "typeclass",
         "object",
         "function_module",

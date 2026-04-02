@@ -196,7 +196,15 @@ class ModuleInstantiator(object):
 
 
 class ArgumentApplier(object):
-    """Bind arguments to module/worker parameters using new IR."""
+    """Bind arguments to module/worker parameters using new IR.
+
+    Args:
+        flatten_mode: If True, bind args across module boundaries (flatten behavior).
+                      If False, skip binding for submodule workers (individual compilation).
+    """
+
+    def __init__(self, flatten_mode=False):
+        self._flatten_mode = flatten_mode
 
     def process_all(self):
         self._apply_api_params()
@@ -232,9 +240,9 @@ class ArgumentApplier(object):
                 assert w_sym.typ.is_function()
                 assert w_sym.typ.scope.is_worker()
                 worker = w_sym.typ.scope
-                # When not flattening, skip binding args for submodule workers
+                # In individual mode, skip binding args for submodule workers
                 # (they will be bound when processing the submodule's own ctor)
-                if not env.config.flatten_modules:
+                if not self._flatten_mode:
                     worker_module = worker.outer_module()
                     caller_module = scope.outer_module()
                     if worker_module and caller_module and worker_module is not caller_module:

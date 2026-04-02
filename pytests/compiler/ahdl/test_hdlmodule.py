@@ -152,6 +152,7 @@ class TestIsHdlmoduleScope:
         # 'function returnable' tags => is_function_module() may be True
         # Test the classmethod directly with a mock that reports is_function_module
         class FakeScope:
+            def is_module(self): return False
             def is_top_module(self): return False
             def is_instantiated(self): return False
             def is_function_module(self): return True
@@ -160,6 +161,7 @@ class TestIsHdlmoduleScope:
 
     def test_top_instantiated(self):
         class FakeScope:
+            def is_module(self): return True
             def is_top_module(self): return True
             def is_instantiated(self): return True
             def is_function_module(self): return False
@@ -168,6 +170,7 @@ class TestIsHdlmoduleScope:
 
     def test_testbench(self):
         class FakeScope:
+            def is_module(self): return False
             def is_top_module(self): return False
             def is_instantiated(self): return False
             def is_function_module(self): return False
@@ -176,6 +179,7 @@ class TestIsHdlmoduleScope:
 
     def test_plain_scope_is_false(self):
         class FakeScope:
+            def is_module(self): return False
             def is_top_module(self): return False
             def is_instantiated(self): return False
             def is_function_module(self): return False
@@ -184,6 +188,7 @@ class TestIsHdlmoduleScope:
 
     def test_top_not_instantiated_is_false(self):
         class FakeScope:
+            def is_module(self): return True
             def is_top_module(self): return True
             def is_instantiated(self): return False
             def is_function_module(self): return False

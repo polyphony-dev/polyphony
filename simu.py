@@ -45,6 +45,10 @@ def parse_options():
                         default=None, help='use C simulator (csim) for Python simulation')
     parser.add_argument('--no-csim', dest='use_csim', action='store_false',
                         help='disable C simulator')
+    parser.add_argument('--flatten', dest='flatten_modules', action='store_true',
+                        default=None, help='flatten nested modules into single module')
+    parser.add_argument('--no-flatten', dest='flatten_modules', action='store_false',
+                        help='use individual module compilation')
     parser.add_argument('source', help='Python source file')
     return parser.parse_args()
 
@@ -111,6 +115,9 @@ def setup_compiler(casefile_path, casename, simu_options):
     compiler_options.verilog_monitor = simu_options.verilog_monitor
     compiler_options.watch_signals = getattr(simu_options, 'watch_signals', '')
     setup(casefile_path, compiler_options)
+    flatten = getattr(simu_options, 'flatten_modules', None)
+    if flatten is not None:
+        env.config.flatten_modules = flatten
     return compiler_options
 
 

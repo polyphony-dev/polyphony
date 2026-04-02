@@ -13,9 +13,9 @@ from pytests.compiler.base import setup_test, setup_libs
 import pytest
 
 
-def _run_inline(scopes):
+def _run_inline(scopes, flatten_mode=True):
     """Run InlineOpt directly on block.stms (unified IR)."""
-    InlineOpt().process_scopes(scopes)
+    InlineOpt(flatten_mode=flatten_mode).process_scopes(scopes)
 
 
 def test_funtion_inlining():
