@@ -344,8 +344,16 @@ def late_quadruple(driver, scope):
 
 
 
+_scalarssa_expr_type_index = None
+
+
 def scalarssa(driver, scope):
-    ScalarSSATransformer().process(scope)
+    global _scalarssa_expr_type_index
+    if _scalarssa_expr_type_index is None:
+        _scalarssa_expr_type_index = VarReplacer.build_expr_type_index()
+    ScalarSSATransformer().process(scope, _scalarssa_expr_type_index)
+    if scope is driver.current_scopes[-1]:
+        _scalarssa_expr_type_index = None
 
 
 def removelphi(driver, scope):
@@ -658,12 +666,20 @@ def flattenmodule(driver, scope):
         driver.insert_scope(s)
 
 
+_objssa_expr_type_index = None
+
+
 def objssa(driver, scope):
-    TupleSSATransformer().process(scope)
+    global _objssa_expr_type_index
+    if _objssa_expr_type_index is None:
+        _objssa_expr_type_index = VarReplacer.build_expr_type_index()
+    TupleSSATransformer().process(scope, _objssa_expr_type_index)
     early_quadruple(driver, scope)
-    ListSSATransformer().process(scope)
+    ListSSATransformer().process(scope, _objssa_expr_type_index)
     ObjectHierarchyCopier().process(scope)
-    ObjectSSATransformer().process(scope)
+    ObjectSSATransformer().process(scope, _objssa_expr_type_index)
+    if scope is driver.current_scopes[-1]:
+        _objssa_expr_type_index = None
 
 
 def objcopyopt(driver, scope):

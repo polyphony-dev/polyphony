@@ -240,7 +240,7 @@ class VarReplacer(object):
                     for expr_t in typehelper.find_expr(sym.typ):
                         if expr_t.scope is scope:
                             entries.append((sym, expr_t))
-        for sym, expr_t in entries:
+        for i, (sym, expr_t) in enumerate(entries):
             expr = expr_t.expr
             old_scope = self.scope
             self.scope = expr_t.scope
@@ -251,6 +251,7 @@ class VarReplacer(object):
             new_expr = expr.model_copy(update={'exp': new_exp})
             new_expr_t = dataclasses_replace(expr_t, expr=new_expr)
             sym.typ = replace_exprtype_in_typ(sym.typ, expr_t, new_expr_t)
+            entries[i] = (sym, new_expr_t)
             if expr.block:
                 blk = scope.find_block(expr.block)
                 blk.replace_stm(expr, new_expr)

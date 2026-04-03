@@ -10,8 +10,24 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-def _find_stm_index(stm, scope=None):
+def _build_stm_index_map(blocks):
+    """Build a dict mapping id(stm) -> index for all stms in blocks (including MStm children)."""
+    index_map = {}
+    for blk in blocks:
+        for i, stm in enumerate(blk.stms):
+            index_map[id(stm)] = i
+            if isinstance(stm, MStm):
+                for child in stm.stms:
+                    index_map[id(child)] = i
+    return index_map
+
+
+def _find_stm_index(stm, scope=None, stm_index_map=None):
     """Find index of stm in its block's stms list, handling MStm children."""
+    if stm_index_map is not None:
+        idx = stm_index_map.get(id(stm), -1)
+        if idx != -1:
+            return idx
     from ...common.utils import find_id_index
     from ...common.env import env
 
@@ -34,7 +50,7 @@ def _find_stm_index(stm, scope=None):
 
 
 class DFNode(object):
-    def __init__(self, typ, tag):
+    def __init__(self, typ, tag, stm_index_map=None):
         self.typ = typ  # 'Stm', 'Loop', 'Block'
         self.tag = tag
         self._nid = -1  # assigned by DataFlowGraph.add_stm_node
@@ -42,7 +58,7 @@ class DFNode(object):
         self.begin = -1
         self.end = -1
         if typ == "Stm":
-            self.stm_index = _find_stm_index(tag)
+            self.stm_index = _find_stm_index(tag, stm_index_map=stm_index_map)
         else:
             self.stm_index = 0
         self.instance_num = 0
@@ -78,7 +94,7 @@ class DFNode(object):
 
 
 class DataFlowGraph(object):
-    def __init__(self, scope, name, parent, region):
+    def __init__(self, scope, name, parent, region, stm_index_map=None):
         self.scope = scope
         self.name = name
         self.region = region
@@ -90,6 +106,7 @@ class DataFlowGraph(object):
         self.pred_edges = defaultdict(set)
         self.src_nodes = set()
         self.parent = parent
+        self.stm_index_map = stm_index_map
         if parent:
             parent.set_child(self)
         self.children = []
@@ -126,7 +143,7 @@ class DataFlowGraph(object):
     def add_stm_node(self, stm):
         n = self._stm_to_node.get(id(stm))
         if not n:
-            n = DFNode("Stm", stm)
+            n = DFNode("Stm", stm, stm_index_map=self.stm_index_map)
             n._nid = len(self.nodes)
             self.nodes.append(n)
             self._stm_to_node[id(stm)] = n
@@ -190,7 +207,7 @@ class DataFlowGraph(object):
 
     def _stm_order_gt(self, stm1, stm2):
         if stm1.block == stm2.block:
-            return _find_stm_index(stm1, self.scope) > _find_stm_index(stm2, self.scope)
+            return _find_stm_index(stm1, self.scope, stm_index_map=self.stm_index_map) > _find_stm_index(stm2, self.scope, stm_index_map=self.stm_index_map)
         else:
             return self.scope.find_block(stm1.block).order > self.scope.find_block(stm2.block).order
 
@@ -529,7 +546,7 @@ def _head_name(ir):
     return ""
 
 
-def _program_order(stm, scope=None):
+def _program_order(stm, scope=None, stm_index_map=None):
     if scope:
         blk = scope.find_block(stm.block)
     else:
@@ -541,14 +558,14 @@ def _program_order(stm, scope=None):
                 break
         else:
             return (0, 0)
-    return (blk.order, _find_stm_index(stm, scope))
+    return (blk.order, _find_stm_index(stm, scope, stm_index_map=stm_index_map))
 
 
 class DFGBuilder(object):
     """Build Data Flow Graphs."""
 
     def __init__(self):
-        pass
+        self._stm_index_map = None
 
     def process(self, scope):
         self.scope = scope
@@ -563,10 +580,11 @@ class DFGBuilder(object):
 
     def _make_graph(self, parent_dfg, region):
         logger.debug("make graph " + region.name)
-        dfg = DataFlowGraph(self.scope, region.name, parent_dfg, region)
-        usedef = self.usedef
-
         blocks = region.blocks()
+        stm_index_map = _build_stm_index_map(blocks)
+        dfg = DataFlowGraph(self.scope, region.name, parent_dfg, region, stm_index_map=stm_index_map)
+        self._stm_index_map = stm_index_map
+        usedef = self.usedef
         # Pass 1: create all nodes in block/stm order so _nid reflects program order
         for b in blocks:
             for stm in _expand_stms(b.stms):
@@ -650,7 +668,7 @@ class DFGBuilder(object):
             for defstm in defstms:
                 if stm is defstm:
                     continue
-                if len(defstms) > 1 and (_program_order(stm, self.scope) <= _program_order(defstm, self.scope)):
+                if len(defstms) > 1 and (_program_order(stm, self.scope, stm_index_map=self._stm_index_map) <= _program_order(defstm, self.scope, stm_index_map=self._stm_index_map)):
                     continue
                 if defstm.block not in [b.bid for b in blocks]:
                     continue
@@ -666,7 +684,7 @@ class DFGBuilder(object):
             for usestm in usestms:
                 if stm is usestm:
                     continue
-                if _program_order(stm, self.scope) <= _program_order(usestm, self.scope):
+                if _program_order(stm, self.scope, stm_index_map=self._stm_index_map) <= _program_order(usestm, self.scope, stm_index_map=self._stm_index_map):
                     continue
                 if usestm.block != stm.block:
                     continue
@@ -706,7 +724,7 @@ class DFGBuilder(object):
         return (
             self.scope.find_block(stm.block).order,
             self.scope.find_block(stm.block).num,
-            _find_stm_index(stm, self.scope),
+            _find_stm_index(stm, self.scope, stm_index_map=self._stm_index_map),
         )
 
     def _add_mem_edges(self, dfg):
@@ -906,7 +924,7 @@ class DFGBuilder(object):
         for u in usedef.get_stms_using(var_sym):
             if u is defnode.tag:
                 continue
-            if _program_order(defnode.tag, self.scope) <= _program_order(u, self.scope):
+            if _program_order(defnode.tag, self.scope, stm_index_map=self._stm_index_map) <= _program_order(u, self.scope, stm_index_map=self._stm_index_map):
                 continue
             if u.block != defnode.tag.block:
                 continue

@@ -72,7 +72,7 @@ class SSATransformerBase(object):
     def __init__(self):
         pass
 
-    def process(self, scope):
+    def process(self, scope, expr_type_index=None):
         if scope.is_class() or scope.is_namespace():
             return
         self.scope = scope
@@ -84,7 +84,7 @@ class SSATransformerBase(object):
         self._insert_phi()
         self._rename()
 
-        self._remove_useless_phi()
+        self._remove_useless_phi(expr_type_index)
         self._insert_predicate()
         self._find_loop_phi()
         self._deal_with_return_phi()
@@ -350,10 +350,9 @@ class SSATransformerBase(object):
         df_builder = DominanceFrontierBuilder()
         self.dominance_frontier = df_builder.process(first_block, tree)
 
-    def _remove_useless_phi(self):
+    def _remove_useless_phi(self, expr_type_index=None):
         self.usedef = UseDefDetector().process(self.scope)
         usedef = self.usedef
-        expr_type_index = VarReplacer.build_expr_type_index()
 
         def get_arg_name_if_same(phi):
             names = [arg.name for arg in phi.args
@@ -382,7 +381,7 @@ class SSATransformerBase(object):
             name = get_arg_name_if_same(phi)
             if name:
                 replace_var = phi.var.model_copy(update={'ctx': Ctx.LOAD, 'name': name})
-                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef, expr_type_index)
+                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef, expr_type_index=expr_type_index)
                 for rep in replaces:
                     if isinstance(rep, Phi):
                         worklist.append(rep)
@@ -526,10 +525,10 @@ class ObjectSSATransformer(SSATransformerBase):
 
 
 class TupleSSATransformer(SSATransformerBase):
-    def process(self, scope):
+    def process(self, scope, expr_type_index=None):
         if scope.is_class() or scope.is_namespace():
             return
-        super().process(scope)
+        super().process(scope, expr_type_index)
         from .tuple import TupleTransformer
         TupleTransformer().process(scope)
         self.usedef = UseDefDetector().process(scope)
