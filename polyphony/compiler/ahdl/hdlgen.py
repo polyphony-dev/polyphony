@@ -414,9 +414,27 @@ class HDLTopModuleBuilderFlatten(HDLTopModuleBuilder):
                     topmodule.add_output(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
             for sig in hdlmodule.get_signals({'subscope'}, exclude_tags=None):
                 subscope = hdlmodule.subscopes[sig]
+                # Skip submodules with workers — their ports are internal signals
+                if subscope.scope.is_module() and len(subscope.scope.workers) > 0:
+                    self._internalize_ports(subscope)
+                    continue
                 collect_io(topmodule, subscope, prefix_qsig + (sig,))
 
         collect_io(self.hdlmodule, self.hdlmodule, tuple())
+
+    def _internalize_ports(self, hdlscope):
+        """Convert all port signals in a submodule scope to internal reg/net."""
+        for sig in hdlscope.get_signals({'single_port'}, exclude_tags=None, with_base=True):
+            sig.tags.discard('input')
+            sig.tags.discard('output')
+            sig.tags.discard('single_port')
+            if 'net' in sig.tags:
+                sig.tags.discard('net')
+                sig.tags.add('reg')
+                sig.tags.add('initializable')
+        for sig in hdlscope.get_signals({'subscope'}, exclude_tags=None):
+            subscope = hdlscope.subscopes[sig]
+            self._internalize_ports(subscope)
 
     def _build_module(self):
         assert self.hdlmodule.scope.is_module()
