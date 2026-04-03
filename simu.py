@@ -189,10 +189,12 @@ def model_selector_with_argv(models):
             # and not part of the model selection criteria.
             if inspect.isfunction(a):
                 continue
+            elif isinstance(a, (int, float, bool, str)):
+                args_str.append(str(a))
             elif type(a).__name__ == 'type':
                 args_str.append(a.__name__)
-            else:
-                args_str.append(str(a))
+            # Skip non-module object arguments — their fields are flattened
+            # into the module at compile time by _bind_object_fields.
         for model, hdlmodule in models.values():
             if args_str == hdlmodule.scope._bound_args:
                 return model
