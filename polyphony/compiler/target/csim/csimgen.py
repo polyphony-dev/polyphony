@@ -177,6 +177,10 @@ class AHDLToCTranspiler(AHDLVisitor):
                     reg_list.append((cname, sig))
                 else:
                     net_list.append((cname, sig))
+            # Skip subscope ports that would overwrite a parent port
+            # with the same name (e.g. inlinelib Channel's clk/rst).
+            if prefix and any(n == sig.name for n, _ in port_names):
+                continue
             port_names.append((sig.name, cname))
 
         # Recurse into subscopes
