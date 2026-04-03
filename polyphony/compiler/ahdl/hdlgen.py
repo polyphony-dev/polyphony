@@ -1,9 +1,11 @@
 
 from .ahdl import *
+from .stg import STG
 from .transformers.varcollector import AHDLVarCollector
 from .transformers.varreplacer import AHDLSignalReplacer
-from .hdlmodule import HDLModule
+from .hdlmodule import FSM, HDLModule
 from ..common.env import env
+from ..common.errors import Errors, CompileError
 from ..ir.ir import *
 from ..ir.irhelper import qualified_symbols
 from ..ir.analysis.usedef import UseDefDetector
@@ -207,14 +209,89 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 return False
         return True
 
+    @staticmethod
+    def _is_inlinelib_module(subscope):
+        """An inlinelib module has its methods inlined into callers but
+        retains internal workers (FSMs).  It must be fully merged into
+        the parent in individual compilation mode."""
+        if not isinstance(subscope, HDLModule):
+            return False
+        return subscope.scope.is_inlinelib()
+
     def _process_submodules(self):
         for instance_sig, subscope in self.hdlmodule.subscopes.items():
             if not isinstance(subscope, HDLModule):
                 continue
-            if self._is_protocol_module(subscope):
+            if self._is_inlinelib_module(subscope):
+                self._process_inlinelib_subscope(instance_sig, subscope)
+            elif self._is_protocol_module(subscope):
                 self._process_protocol_subscope(instance_sig, subscope)
             else:
                 self._process_regular_subscope(instance_sig, subscope)
+
+    def _process_inlinelib_subscope(self, instance_sig, subscope):
+        """Fully inline an @inlinelib submodule into the parent module.
+
+        The submodule's FSMs and declarations are merged into the parent,
+        with all signal references remapped to nested form so that
+        FlattenSignalsIndividual can flatten them later.
+        """
+        # Collect state var signals so we can handle them specially
+        state_var_sigs = {fsm.state_var for fsm in subscope.fsms.values()}
+
+        # Build replace table
+        replace_table: dict[tuple, tuple] = {}
+        flat_state_vars: dict[Signal, Signal] = {}
+        for sig_name, sig in subscope.signals.items():
+            if sig_name in ('clk', 'rst'):
+                continue
+            if sig in state_var_sigs:
+                # State vars: create a flat signal in the parent to avoid
+                # mismatch between fsm.state_var and STG references
+                flat_name = f'{instance_sig.name}_{sig_name}'
+                flat_sig = self.hdlmodule.gen_sig(flat_name, sig.width, sig.tags)
+                replace_table[(sig,)] = (flat_sig,)
+                flat_state_vars[sig] = flat_sig
+            else:
+                # All other signals: nest under instance_sig
+                replace_table[(sig,)] = (instance_sig, sig)
+
+        replacer = AHDLSignalReplacer(replace_table)
+        replacer.hdlmodule = self.hdlmodule
+
+        # Merge FSMs: create shallow copies so the Channel originals are untouched.
+        # Prefix FSM names with the instance name to avoid collisions
+        # when multiple instances of the same @inlinelib module exist.
+        prefix = instance_sig.name
+        for fsm_name, fsm in subscope.fsms.items():
+            merged_name = f'{prefix}_{fsm_name}'
+            new_state_var = flat_state_vars.get(fsm.state_var, fsm.state_var)
+            new_fsm = FSM(merged_name, fsm.scope, new_state_var)
+            for stg in fsm.stgs:
+                new_stg = STG(stg.name, stg.parent, self.hdlmodule)
+                new_stg.set_states(list(stg.states))
+                new_stg.scheduling = stg.scheduling
+                new_fsm.stgs.append(new_stg)
+            new_fsm.outputs = fsm.outputs.copy()
+            new_fsm.reset_stms = fsm.reset_stms[:]
+            replacer.process_fsm(new_fsm)
+            # Keep only array-element resets (from ctor init);
+            # _process_fsm will re-add scalar reg resets later.
+            new_fsm.reset_stms = [
+                stm for stm in new_fsm.reset_stms
+                if isinstance(stm, AHDL_MOVE) and isinstance(stm.dst, AHDL_SUBSCRIPT)
+            ]
+            self.hdlmodule.fsms[merged_name] = new_fsm
+
+        # Merge declarations (combinational assigns)
+        for decl in subscope.decls:
+            new_decl = replacer.visit(decl)
+            if isinstance(new_decl, AHDL_DECL):
+                self.hdlmodule.add_decl(new_decl)
+
+        # Mark as inlined so Verilog output skips this module
+        subscope._inlined_into_parent = True
+        logger.debug(str(self.hdlmodule))
 
     def _process_protocol_subscope(self, instance_sig, subscope):
         """Flatten a protocol module's ports into the parent module."""
@@ -266,6 +343,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             vars = (instance_sig,) + var.vars
             replace_table[vars] = (connector,)
         AHDLSignalReplacer(replace_table).process(self.hdlmodule)
+        self._regular_subscope_instances.append(instance_sig)
         logger.debug(str(self.hdlmodule))
 
     def _process_io(self, hdlmodule):
@@ -316,6 +394,25 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 connector.add_tag({'net', 'input', 'single_port'})
                 self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
 
+    def _check_internal_field_access(self):
+        """After I/O port references are replaced with connectors,
+        check that no parent FSM/decl still references internal fields
+        of a regular submodule.  Such references indicate that inlined
+        methods wrote to submodule fields — which cannot be compiled
+        as separate modules."""
+        if not self._regular_subscope_instances:
+            return
+        regular_sigs = set(self._regular_subscope_instances)
+        # Collect all nested var references from the collector
+        all_nested = self._collector.submodule_vars()
+        for vars in all_nested:
+            if vars[0] in regular_sigs:
+                field_name = vars[-1].name
+                instance_name = vars[0].name
+                msg = str(Errors.SUBMODULE_INTERNAL_FIELD_ACCESS).format(
+                    field_name, instance_name)
+                raise CompileError(msg)
+
     def _process_fsm(self, fsm):
         scope = fsm.scope
         self._add_roms(self._collector.mem_vars(fsm.name))
@@ -341,10 +438,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 if sub_builder:
                     sub_builder.process(subscope)
                     subscope._built = True
+        self._regular_subscope_instances = []
         self._process_submodules()
         self._process_io(self.hdlmodule)
 
         self._collector.process(self.hdlmodule)
+        self._check_internal_field_access()
         fsms = list(self.hdlmodule.fsms.values())
         ctor_array_inits = []
         for fsm in fsms:

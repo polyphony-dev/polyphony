@@ -210,12 +210,27 @@ def is_uninlined_scope_flatten(scope):
             )
 
 
+def _is_inlinelib_submodule(scope):
+    """Check if scope is an @inlinelib submodule that gets inlined into parent."""
+    return (scope.is_inlinelib()
+            and scope.is_module()
+            and scope.is_instantiated()
+            and scope.parent is not Scope.global_scope())
+
+
 def is_hdlmodule_scope(scope):
     if scope.is_module() and scope.is_instantiated():
         return True
     return ((scope.is_top_module() and scope.is_instantiated())
             or scope.is_function_module()
             or scope.is_testbench())
+
+
+def is_output_hdlmodule_scope_individual(scope):
+    """Like is_hdlmodule_scope but skips @inlinelib submodules (already merged into parent)."""
+    if _is_inlinelib_submodule(scope):
+        return False
+    return is_hdlmodule_scope(scope)
 
 
 def is_hdlmodule_scope_flatten(scope):
@@ -1288,7 +1303,7 @@ def _output_plan_flatten():
 
 def _output_plan_individual():
     return [
-        filter_scope(is_hdlmodule_scope),
+        filter_scope(is_output_hdlmodule_scope_individual),
         clone_output_module,
         dumpmodule,
         ahdl_flatten_signals,
