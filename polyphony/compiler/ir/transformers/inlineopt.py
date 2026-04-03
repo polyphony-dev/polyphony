@@ -1087,7 +1087,7 @@ class FlattenModule(IrVisitor):
         in_self.typ = in_self.typ.clone(scope=parent_module)
 
         replace_map = {}
-        replace_map[worker_self] = Attr(exp=Temp("self"), attr=inst_name)
+        replace_map[worker_self] = arg.exp
         IrReplacer(replace_map).process(new_worker, new_worker.entry_block)
         return new_worker, Attr(
             name=new_worker.base_name, exp=Temp(name="self"), attr=new_worker.base_name, ctx=Ctx.LOAD
