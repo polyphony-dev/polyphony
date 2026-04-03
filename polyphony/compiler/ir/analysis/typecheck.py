@@ -616,6 +616,24 @@ class PortAccessChecker(IrVisitor):
         # Check thru'd output write
         if port_t.thru:
             fail(self.current_stm, Errors.THRU_OUTPUT_WRITE_FORBIDDEN, [port_sym.orig_name()])
+        # Check private submodule port write
+        if self._is_private_submodule_port(port_sym):
+            fail(self.current_stm, Errors.SUBMODULE_PORT_WRITE_FORBIDDEN, [port_sym.orig_name()])
+
+    def _is_private_submodule_port(self, port_sym):
+        """Check if port is a private port of a different module."""
+        port_name = port_sym.orig_name()
+        if not port_name.startswith('_'):
+            return False
+        # Find the module that owns the port
+        port_owner = port_sym.typ.port_owner()
+        # Find the module that contains the current scope (worker)
+        current_module = self.scope
+        while current_module and not current_module.is_module():
+            current_module = current_module.parent
+        if port_owner is None or current_module is None:
+            return False
+        return port_owner is not current_module
 
     def _get_port_sym(self, func_ir):
         """Extract the port symbol from a method call like self.o.wr()."""
