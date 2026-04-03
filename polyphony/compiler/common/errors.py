@@ -79,6 +79,9 @@ class Errors(Enum):
     PORT_ASSIGN_CANNOT_ACCEPT = 914
     WORKER_TEMP_OBJ_ARG = 915
     MODULE_OBJECT_FIELD_IS_IMMUTABLE = 916
+    THRU_DIRECTION_MISMATCH = 917
+    THRU_OUTPUT_WRITE_FORBIDDEN = 918
+    SUBMODULE_PORT_WRITE_FORBIDDEN = 919
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -187,6 +190,9 @@ ERROR_MESSAGES = {
     Errors.MODULE_CANNOT_ACCESS_OBJECT: "The module class cannot access an object",
     Errors.PORT_ASSIGN_CANNOT_ACCEPT: "Port.assign() accepts only a module method or a lambda",
     Errors.WORKER_TEMP_OBJ_ARG: "Temporary object argument is not supported.",
+    Errors.THRU_DIRECTION_MISMATCH: "thru() requires both ports to have the same direction, got '{}' and '{}'",
+    Errors.THRU_OUTPUT_WRITE_FORBIDDEN: "Cannot write to thru'd output port '{}'",
+    Errors.SUBMODULE_PORT_WRITE_FORBIDDEN: "Cannot write to submodule port '{}' from parent module",
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
