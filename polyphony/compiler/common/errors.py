@@ -87,6 +87,7 @@ class Errors(Enum):
     WRITING_IS_CONFLICTED = 921
     DIRECTION_IS_CONFLICTED = 922
     CANNOT_WAIT_OUTPUT = 923
+    CONNECT_DIRECTION_MISMATCH = 924
 
     PURE_ERROR = 930
     PURE_MUST_BE_GLOBAL = 931
@@ -197,6 +198,7 @@ ERROR_MESSAGES = {
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
     Errors.CANNOT_WAIT_OUTPUT: "Cannot wait for the output port",
+    Errors.CONNECT_DIRECTION_MISMATCH: "connect() requires ports with opposite directions, got '{}' and '{}'",
 
     Errors.PURE_ERROR: "@pure Python execution is failed",
     Errors.PURE_MUST_BE_GLOBAL: "@pure function must be in the global scope",

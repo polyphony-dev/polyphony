@@ -355,7 +355,7 @@ class PortConnector(IrVisitor):
             elif dir0.value == 'out' and dir1.value == 'in':
                 port_assign_call = self._make_assign_call(p1_resolved, p0_resolved, p1_ir, p0_ir)
             else:
-                assert False
+                fail(self.current_stm, Errors.CONNECT_DIRECTION_MISMATCH, [dir0.value, dir1.value])
         elif func == 'thru':
             if dir0.value == 'in' and dir1.value == 'in':
                 port_assign_call = self._make_assign_call(p1_resolved, p0_resolved, p1_ir, p0_ir)

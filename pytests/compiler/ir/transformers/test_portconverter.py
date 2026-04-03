@@ -10,6 +10,7 @@ from polyphony.compiler.ir.transformers.portconverter import (
     PortTypeProp, FlippedTransformer, FlippedPortsBuilder, PortConnector,
 )
 from polyphony.compiler.common.env import env
+from polyphony.compiler.common.errors import CompileError
 from pytests.compiler.base import setup_test, setup_libs
 
 
@@ -439,8 +440,8 @@ def test_port_connector_visit_syscall_connect_dispatches():
     connector.current_stm = Expr(exp=syscall, block=blk.bid)
     try:
         connector.visit_SysCall(syscall)
-    except (AttributeError, AssertionError):
-        pass  # Expected: _connect_port uses .params[3] which may not exist
+    except (AttributeError, AssertionError, CompileError):
+        pass  # Expected: same-direction connect raises CompileError (or missing params)
 
 
 def test_port_connector_visit_syscall_thru_dispatches():
