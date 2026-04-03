@@ -181,7 +181,7 @@ def call_iverilog(testname, casename, casefile_path, options):
     return None
 
 
-def model_selector_with_argv(models):
+def model_selector_with_argv(models, class_name):
     def model_selector(*args, **kwargs):
         args_str = []
         for a in args:
@@ -196,6 +196,8 @@ def model_selector_with_argv(models):
             # Skip non-module object arguments — their fields are flattened
             # into the module at compile time by _bind_object_fields.
         for model, hdlmodule in models.values():
+            if hdlmodule.scope.orig_name.rsplit('.', 1)[-1] != class_name:
+                continue
             if args_str == hdlmodule.scope._bound_args:
                 return model
         raise ValueError('model not found')
@@ -372,7 +374,7 @@ def simulate_on_python(casefile_path, source_text, scopes, simu_options):
         # Replacing classes/functions under test with a model selector
         for obj in py_objects:
             if inspect.isclass(obj):
-                test._orig_func.__globals__[obj.__name__] = model_selector_with_argv(models)
+                test._orig_func.__globals__[obj.__name__] = model_selector_with_argv(models, obj.__name__)
             elif inspect.isfunction(obj):
                 test._orig_func.__globals__[obj.__name__] = model_selector_with_argtypes(models, obj.__name__)
             else:
