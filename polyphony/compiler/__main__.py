@@ -40,7 +40,7 @@ from .ir.analysis.scopegraph import UsingScopeDetector
 from .ir.analysis.typecheck import (
     TypeChecker, EarlyTypeChecker, PortAssignChecker,
     EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker,
-    AssertionChecker, SynthesisParamChecker,
+    AssertionChecker, SynthesisParamChecker, PortAccessChecker,
 )
 
 from .ir.transformers.bitwidth import TempVarWidthSetter
@@ -420,6 +420,10 @@ def laterestrictioncheck(driver, scope):
 
 def assertioncheck(driver, scope):
     AssertionChecker().process(scope)
+
+
+def portaccesscheck(driver, scope):
+    PortAccessChecker().process(scope)
 
 
 def synthcheck(driver, scope):
@@ -1044,6 +1048,7 @@ def _plan_part3():
 
         phase(env.PHASE_4),
         convport,
+        portaccesscheck,
 
         phase(env.PHASE_5),
         aliasvar,

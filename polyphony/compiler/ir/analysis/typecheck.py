@@ -590,6 +590,47 @@ class AssertionChecker(IrVisitor):
             warn(self.current_stm, Warnings.ASSERTION_FAILED)
 
 
+class PortAccessChecker(IrVisitor):
+    """Check port access control rules.
+
+    - thru'd output ports cannot be written from parent side (wr, assign)
+    """
+
+    def visit_Call(self, ir):
+        callee_scope = _get_callee_scope(ir, self.scope)
+        if not callee_scope.is_method():
+            return
+        parent_scope = callee_scope.parent
+        if not parent_scope.is_port():
+            return
+        method_name = callee_scope.base_name
+        if method_name not in ('wr', 'assign'):
+            return
+        # Get the port symbol being accessed
+        port_sym = self._get_port_sym(ir.func)
+        if port_sym is None:
+            return
+        port_t = port_sym.typ
+        if not port_t.is_port():
+            return
+        # Check thru'd output write
+        if port_t.thru:
+            fail(self.current_stm, Errors.THRU_OUTPUT_WRITE_FORBIDDEN, [port_sym.orig_name()])
+
+    def _get_port_sym(self, func_ir):
+        """Extract the port symbol from a method call like self.o.wr()."""
+        if not isinstance(func_ir, Attr):
+            return None
+        exp = func_ir.exp
+        qsyms = qualified_symbols(exp, self.scope)
+        if not qsyms:
+            return None
+        last = qsyms[-1]
+        if isinstance(last, Symbol) and last.typ.is_port():
+            return last
+        return None
+
+
 class SynthesisParamChecker(object):
     """Synthesis parameter checker using new IR.
 

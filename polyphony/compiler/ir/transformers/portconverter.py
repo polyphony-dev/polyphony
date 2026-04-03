@@ -288,7 +288,7 @@ class PortConnector(IrVisitor):
         if scope0.is_port():
             if not scope1.is_port():
                 assert False
-            self._connect_port(a0_sym, a1_sym, func)
+            self._connect_port(a0_sym, a1_sym, func, a0, a1)
         else:
             if scope1.is_port():
                 assert False
@@ -312,15 +312,25 @@ class PortConnector(IrVisitor):
                         return stm.src
         return None
 
-    def _connect_port(self, p0_sym, p1_sym, func):
+    def _connect_port(self, p0_sym, p1_sym, func, p0_exp=None, p1_exp=None):
+        """Connect two ports with the given function ('connect' or 'thru').
+
+        p0_exp and p1_exp are the original IR expressions for the ports (used when
+        p0_sym/p1_sym are bare Symbols that lack scope context for the lambda body).
+        """
         if isinstance(p0_sym, Symbol):
             p0_resolved = p0_sym
+            # Use original expression if available, otherwise wrap symbol as Attr
+            p0_ir = p0_exp if p0_exp is not None else Temp(p0_sym.name)
         else:
             p0_resolved = qualified_symbols(p0_sym, self.scope)[-1]
+            p0_ir = p0_sym  # Attr node already has correct exp chain
         if isinstance(p1_sym, Symbol):
             p1_resolved = p1_sym
+            p1_ir = p1_exp if p1_exp is not None else Temp(p1_sym.name)
         else:
             p1_resolved = qualified_symbols(p1_sym, self.scope)[-1]
+            p1_ir = p1_sym  # Attr node already has correct exp chain
         assert isinstance(p0_resolved, Symbol)
         assert isinstance(p1_resolved, Symbol)
         p0_t = p0_resolved.typ
@@ -341,16 +351,16 @@ class PortConnector(IrVisitor):
         port_assign_call = None
         if func == 'connect':
             if dir0.value == 'in' and dir1.value == 'out':
-                port_assign_call = self._make_assign_call(p0_sym, p1_sym)
+                port_assign_call = self._make_assign_call(p0_resolved, p1_resolved, p0_ir, p1_ir)
             elif dir0.value == 'out' and dir1.value == 'in':
-                port_assign_call = self._make_assign_call(p1_sym, p0_sym)
+                port_assign_call = self._make_assign_call(p1_resolved, p0_resolved, p1_ir, p0_ir)
             else:
                 assert False
         elif func == 'thru':
             if dir0.value == 'in' and dir1.value == 'in':
-                port_assign_call = self._make_assign_call(p1_sym, p0_sym)
+                port_assign_call = self._make_assign_call(p1_resolved, p0_resolved, p1_ir, p0_ir)
             elif dir0.value == 'out' and dir1.value == 'out':
-                port_assign_call = self._make_assign_call(p0_sym, p1_sym)
+                port_assign_call = self._make_assign_call(p0_resolved, p1_resolved, p0_ir, p1_ir)
                 # Mark parent output port as thru-connected (read-only from parent side)
                 self._mark_thru(p0_sym)
             else:
@@ -360,28 +370,22 @@ class PortConnector(IrVisitor):
             Expr(port_assign_call)
         )
 
-    def _make_assign_call(self, p0_sym, p1_sym):
-        """Create a port assign call."""
-        if isinstance(p0_sym, Symbol):
-            p0_t = p0_sym.typ
-            p0_name = p0_sym.name
-        else:
-            p0_t = qualified_symbols(p0_sym, self.scope)[-1].typ
-            p0_name = p0_sym.name
-        if isinstance(p1_sym, Symbol):
-            p1_t = p1_sym.typ
-            p1_name = p1_sym.name
-        else:
-            p1_t = qualified_symbols(p1_sym, self.scope)[-1].typ
-            p1_name = p1_sym.name
+    def _make_assign_call(self, p0_sym, p1_sym, p0_ir, p1_ir):
+        """Create a port assign call: p0.assign(lambda: p1.rd()).
+
+        p0_sym, p1_sym: resolved Symbol objects for type/scope lookup.
+        p0_ir, p1_ir: IR expressions for the ports (Attr chains or Temp).
+        """
+        p0_t = p0_sym.typ
+        p1_t = p1_sym.typ
         port_scope0 = p0_t.scope
         port_scope1 = p1_t.scope
         rd_sym = port_scope1.find_sym('rd')
-        port_rd = Attr(Temp(p1_name), rd_sym.name)
+        port_rd = Attr(p1_ir, rd_sym.name)
         port_rd_call = Call(func=port_rd, args=(), kwargs={})
         lambda_sym = self._make_lambda(port_rd_call)
         assign_sym = port_scope0.find_sym('assign')
-        port_assign = Attr(Temp(p0_name), assign_sym.name)
+        port_assign = Attr(p0_ir, assign_sym.name)
         port_assign_call = Call(func=port_assign,
                                     args=(('fn', Temp(lambda_sym.name)),), kwargs={})
         return port_assign_call
