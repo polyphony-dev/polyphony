@@ -338,7 +338,7 @@ class PortConnector(IrVisitor):
             elif dir0.value == 'out' and dir1.value == 'out':
                 port_assign_call = self._make_assign_call(p0_sym, p1_sym)
             else:
-                assert False
+                fail(self.current_stm, Errors.THRU_DIRECTION_MISMATCH, [dir0.value, dir1.value])
         # Append to block
         self.scope.find_block(self.current_stm.block).append_stm(
             Expr(port_assign_call)
