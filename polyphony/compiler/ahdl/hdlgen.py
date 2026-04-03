@@ -190,6 +190,66 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
 class HDLTopModuleBuilder(HDLModuleBuilder):
     """Builder for module scopes in individual compilation mode."""
 
+    @staticmethod
+    def _is_protocol_module(subscope):
+        """A protocol module is a module with NO logic after compilation —
+        no FSMs, no decls, no sub_modules.  Its methods are inlined into the
+        caller.  E.g. Handshake, RAMPort, FIFOPort."""
+        return (isinstance(subscope, HDLModule)
+                and len(subscope.fsms) == 0
+                and len(subscope.decls) == 0
+                and len(subscope.sub_modules) == 0)
+
+    def _process_submodules(self):
+        for instance_sig, subscope in self.hdlmodule.subscopes.items():
+            if not isinstance(subscope, HDLModule):
+                continue
+            if self._is_protocol_module(subscope):
+                self._process_protocol_subscope(instance_sig, subscope)
+            else:
+                self._process_regular_subscope(instance_sig, subscope)
+
+    def _process_protocol_subscope(self, instance_sig, subscope):
+        """Flatten a protocol module's ports into the parent module."""
+        replace_table:dict[tuple, tuple] = {}
+        for var in subscope._inputs + subscope._outputs:
+            # Flip tags: parent drives child outputs, reads child inputs
+            if var.sig.is_output():
+                attrs = {'connector', 'reg', 'initializable'}
+            else:
+                attrs = {'connector', 'net'}
+            if var.sig.is_ctrl():
+                attrs.add('ctrl')
+            connector_name = f'{instance_sig.name}_{var.hdl_name}'
+            connector = self.hdlmodule.gen_sig(connector_name, var.sig.width, attrs)
+            self.hdlmodule.protocol_ports.append((instance_sig, var, connector))
+            nested_vars = (instance_sig,) + var.vars
+            replace_table[nested_vars] = (connector,)
+        AHDLSignalReplacer(replace_table).process(self.hdlmodule)
+        logger.debug(str(self.hdlmodule))
+
+    def _process_regular_subscope(self, instance_sig, subscope):
+        """Existing behavior for regular submodules with workers."""
+        param_map = {}
+        cls = subscope.scope.as_class()
+        if cls and cls.module_param_vars:
+            for name, v in cls.module_param_vars:
+                param_map[name] = v
+        connections = []
+        for (var, connector_name, attrs) in cast(HDLModule, subscope).connectors(instance_sig.name):
+            connector = self.hdlmodule.gen_sig(connector_name, var.sig.width, attrs)
+            connections.append((var, connector))
+        self.hdlmodule.add_sub_module(instance_sig.name,
+                                      subscope,
+                                      connections,
+                                      param_map=param_map)
+        replace_table:dict[tuple, tuple] = {}
+        for var, connector in connections:
+            vars = (instance_sig,) + var.vars
+            replace_table[vars] = (connector,)
+        AHDLSignalReplacer(replace_table).process(self.hdlmodule)
+        logger.debug(str(self.hdlmodule))
+
     def _process_io(self, hdlmodule):
         for sig in hdlmodule.get_signals({'single_port'}, exclude_tags=None, with_base=True):
             if sig.is_input():
@@ -221,6 +281,22 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                     elif sub_var.sig.is_output():
                         connector.add_tag('output')
                         self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.LOAD))
+        # Protocol ports are always exposed as parent I/O
+        # (they represent the parent's external interface, not internal wiring)
+        for _proto_sig, sub_var, connector in self.hdlmodule.protocol_ports:
+            connector.width = sub_var.sig.width
+            if sub_var.sig.is_int():
+                connector.add_tag('int')
+            if sub_var.sig.is_output():
+                # Child output → parent output (parent FSM drives it)
+                connector.add_tag('output')
+                connector.add_tag('single_port')
+                self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.STORE))
+            elif sub_var.sig.is_input():
+                # Child input → parent input (external provides it)
+                connector.tags.discard('net')
+                connector.add_tag({'net', 'input', 'single_port'})
+                self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
 
     def _process_fsm(self, fsm):
         scope = fsm.scope

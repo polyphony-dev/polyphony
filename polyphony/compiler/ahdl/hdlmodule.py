@@ -41,6 +41,7 @@ class HDLModule(HDLScope):
         self.parameters: dict[Signal, Any] = {}
         self.constants: dict[Signal, Any] = {}
         self.sub_modules = {}
+        self.protocol_ports: list[tuple[Signal, AHDL_VAR, Signal]] = []
         self.functions = []
         self.decls: list[AHDL_DECL] = []
         self._decls_set: set[AHDL_DECL] = set()
@@ -199,6 +200,7 @@ class HDLModule(HDLScope):
             new_module_sig = sig_maps[new.name][orig_module_sig]
             new_sub_hdlscope = new.subscopes[new_module_sig]
             new.sub_modules[name] = (name, new_sub_hdlscope, connections, param_map)
+        new.protocol_ports = self.protocol_ports[:]
         new.functions = self.functions[:]
         new.decls = self.decls[:]
         new._decls_set = self._decls_set.copy()
@@ -226,7 +228,11 @@ class HDLModule(HDLScope):
         return self._outputs
 
     def connectors(self, prefix):
+        # Collect protocol port connector signals to skip from regular I/O
+        protocol_connector_sigs = {connector_sig for _, _, connector_sig in self.protocol_ports}
         for var in self._inputs + self._outputs:
+            if var.sig in protocol_connector_sigs:
+                continue  # Will be yielded below with nested var path
             if self.scope.is_module():
                 ifname = var.hdl_name
             else:
@@ -241,6 +247,18 @@ class HDLModule(HDLScope):
             if var.sig.is_ctrl():
                 attr.add('ctrl')
             yield (var, connector_name, attr)
+        # Yield flattened protocol module ports with nested var paths
+        # so that parent-of-parent signal replacement can match 3-level references
+        for proto_sig, sub_var, connector_sig in self.protocol_ports:
+            nested_var = AHDL_VAR((proto_sig,) + sub_var.vars, sub_var.ctx)
+            connector_name = f'{prefix}_{connector_sig.name}'
+            attr = {'connector'}
+            if connector_sig.is_input():
+                attr.add('reg')
+                attr.add('initializable')
+            else:
+                attr.add('net')
+            yield (nested_var, connector_name, attr)
 
     def add_task(self, task):
         self.tasks.append(task)
