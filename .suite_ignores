@@ -41,6 +41,8 @@ error/seq_capacity01.py
 error/seq_capacity02.py
 error/toomany_args01.py
 error/toomany_args02.py
+# module: iverilog include wrapper causes simulation hang
+module/nesting05.py
 # issues: known bugs (pending fix)
 issues/list_accum_alias.py
 issues/narrow_type_shift_overflow.py

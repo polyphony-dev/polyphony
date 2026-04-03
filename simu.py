@@ -154,16 +154,10 @@ def call_iverilog(testname, casename, casefile_path, options):
         test_filename = f'{options.output_prefix}_{testname}'
     else:
         test_filename = testname
-    # Read the include wrapper and extract actual .v files
-    wrapper_path = f'{TMP_DIR}{os.path.sep}{casename}.v'
-    hdl_files = []
-    with open(wrapper_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith('`include'):
-                included = line.split('"')[1]
-                hdl_files.append(f'{TMP_DIR}{os.path.sep}{included}')
-    hdl_files.append(f'{TMP_DIR}{os.path.sep}{test_filename}.v')
+    hdl_files = [
+        f'{TMP_DIR}{os.path.sep}{casename}.v',
+        f'{TMP_DIR}{os.path.sep}{test_filename}.v',
+    ]
     exec_name = f'{TMP_DIR}{os.path.sep}{test_filename}'
     args = (f'{IVERILOG_PATH} -I {TMP_DIR} -W all -Wno-implicit-dimensions -o {exec_name} -s {testname}').split(' ')
     args += hdl_files
