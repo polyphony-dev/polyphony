@@ -1078,7 +1078,7 @@ class FlattenModule(IrVisitor):
         worker_scope = arg_t.scope
         assert isinstance(arg, Attr)
         inst_name = cast(IrNameExp, arg.exp).name
-        new_worker = worker_scope.clone(inst_name, "", parent=parent_module)
+        new_worker = worker_scope.clone(inst_name, "", parent=parent_module, recursive=True)
         if new_worker.is_inlinelib():
             new_worker.del_tag("inlinelib")
         worker_self = new_worker.find_sym("self")
@@ -1089,6 +1089,12 @@ class FlattenModule(IrVisitor):
         replace_map = {}
         replace_map[worker_self] = arg.exp
         IrReplacer(replace_map).process(new_worker, new_worker.entry_block)
+        # Apply self-replacement to cloned child scopes (lambdas from wait_until etc.)
+        for child in new_worker.children:
+            child_self = child.find_sym("self")
+            if child_self:
+                child_replace_map = {child_self: arg.exp}
+                IrReplacer(child_replace_map).process(child, child.entry_block)
         return new_worker, Attr(
             name=new_worker.base_name, exp=Temp(name="self"), attr=new_worker.base_name, ctx=Ctx.LOAD
         )
