@@ -193,12 +193,19 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
     @staticmethod
     def _is_protocol_module(subscope):
         """A protocol module is a module with NO logic after compilation —
-        no FSMs, no decls, no sub_modules.  Its methods are inlined into the
-        caller.  E.g. Handshake, RAMPort, FIFOPort."""
-        return (isinstance(subscope, HDLModule)
-                and len(subscope.fsms) == 0
-                and len(subscope.decls) == 0
-                and len(subscope.sub_modules) == 0)
+        no FSMs, no port-driving decls, no sub_modules.  Its methods are
+        inlined into the caller.  E.g. Handshake, RAMPort, FIFOPort,
+        and workerless submodules with only parameter fields."""
+        if not isinstance(subscope, HDLModule):
+            return False
+        if subscope.fsms or subscope.sub_modules:
+            return False
+        # Decls that write to port signals are real combinational logic
+        # (e.g. Port.assign). Decls that only set parameter constants are fine.
+        for decl in subscope.decls:
+            if isinstance(decl, AHDL_ASSIGN) and decl.dst.sig.is_single_port():
+                return False
+        return True
 
     def _process_submodules(self):
         for instance_sig, subscope in self.hdlmodule.subscopes.items():
@@ -225,6 +232,17 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             self.hdlmodule.protocol_ports.append((instance_sig, var, connector))
             nested_vars = (instance_sig,) + var.vars
             replace_table[nested_vars] = (connector,)
+        # Migrate constant parameter decls to parent module
+        for decl in subscope.decls:
+            if isinstance(decl, AHDL_ASSIGN):
+                # Re-create the signal in the parent with prefixed name
+                dst_name = f'{instance_sig.name}_{decl.dst.hdl_name}'
+                dst_sig = self.hdlmodule.gen_sig(dst_name, decl.dst.sig.width, decl.dst.sig.tags)
+                new_dst = AHDL_VAR(dst_sig, Ctx.STORE)
+                self.hdlmodule.add_static_assignment(AHDL_ASSIGN(new_dst, decl.src))
+                # Also replace references to the param in parent FSMs
+                nested_param = (instance_sig,) + decl.dst.vars
+                replace_table[nested_param] = (dst_sig,)
         AHDLSignalReplacer(replace_table).process(self.hdlmodule)
         logger.debug(str(self.hdlmodule))
 
