@@ -348,6 +348,11 @@ class PortConnector(IrVisitor):
         assert isinstance(new0, New) and isinstance(new1, New)
         dir0 = new0.args[1][1]
         dir1 = new1.args[1][1]
+        # Check if either port is already thru-connected (write-protected)
+        if p0_resolved.is_thru() and dir0.value == 'out':
+            fail(self.current_stm, Errors.THRU_OUTPUT_WRITE_FORBIDDEN, [p0_resolved.orig_name()])
+        if p1_resolved.is_thru() and dir1.value == 'out':
+            fail(self.current_stm, Errors.THRU_OUTPUT_WRITE_FORBIDDEN, [p1_resolved.orig_name()])
         port_assign_call = None
         if func == 'connect':
             if dir0.value == 'in' and dir1.value == 'out':
