@@ -1,10 +1,4 @@
-"""3-level nested module: GrandChild -> Child -> Parent
-Error: qualified_symbols fails to resolve 3-level attribute chain
-after inlining.
-
-qsyms[-1]='rd' (type=str) for var=self.gc.i.rd in scope=@top.Parent.gc_run_0
-"""
-from polyphony import module, is_worker_running
+from polyphony import module, testbench, is_worker_running
 from polyphony.io import Port
 from polyphony.timing import clksleep
 from polyphony.typing import int8
@@ -52,4 +46,10 @@ class Parent:
             self.o.wr(self.child.o.rd())
 
 
-top = Parent()
+@testbench
+def test():
+    m = Parent()
+    m.i.wr(7)
+    clksleep(20)
+    expected = 7 * 3  # GrandChild multiplies by 3
+    assert expected == m.o.rd()
