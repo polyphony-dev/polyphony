@@ -147,7 +147,9 @@ def exec_test_entry(t, options, suite_results):
     if not options.silent:
         print(t)
     start_time = time.time()
+    saved_stdout = sys.stdout
     try:
+        sys.stdout = open(os.devnull, 'w')
         hdl_finishes, py_finishes = simu.exec_test(t, options)
         if options.enable_python:
             suite_results[t] = f"HDL Result: {','.join(hdl_finishes)} Python Result: {','.join(py_finishes)}"
@@ -155,6 +157,8 @@ def exec_test_entry(t, options, suite_results):
             suite_results[t] = f"{','.join(hdl_finishes)}"
     except Exception as e:
         suite_results[t] = "Internal Error"
+    finally:
+        sys.stdout = saved_stdout
     elapsed = time.time() - start_time
     if elapsed > 30:
         print(f"WARNING: {t} took {elapsed:.1f}s")
