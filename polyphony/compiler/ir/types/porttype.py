@@ -32,6 +32,10 @@ class PortType(ScopeType):
         return self.attrs['assigned']
 
     @property
+    def thru(self):
+        return self.attrs.get('thru', False)
+
+    @property
     def root_symbol(self):
         val = self.attrs['root_symbol']
         if isinstance(val, str):

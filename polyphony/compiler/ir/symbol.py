@@ -21,6 +21,7 @@ class Symbol(Tagged):
         'loop_counter', 'register', 'inherited', 'imported',
         'unresolved_scope',
         'typevar',
+        'thru',
     }
 
     @classmethod

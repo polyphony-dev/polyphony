@@ -57,11 +57,15 @@ class PortTypeProp(TypePropagation):
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
             assert 'dtype' in attrs
             assert 'direction' in attrs
-            attrs['root_symbol'] = qualified_symbols(
+            root_sym = qualified_symbols(
                 cast(IrNameExp, cast(Move, self.current_stm).dst), self.scope)[-1]
+            attrs['root_symbol'] = root_sym
             attrs['assigned'] = False
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
+            # Propagate thru tag set by PortConnector before PortTypeProp runs
+            if isinstance(root_sym, Symbol) and root_sym.is_thru():
+                attrs['thru'] = True
 
             port_t = Type.port(callee_scope, attrs)
             logger.debug(f'{cast(Move, self.current_stm).dst} {port_t}')
@@ -309,8 +313,18 @@ class PortConnector(IrVisitor):
         return None
 
     def _connect_port(self, p0_sym, p1_sym, func):
-        p0_t = p0_sym.typ
-        p1_t = p1_sym.typ
+        if isinstance(p0_sym, Symbol):
+            p0_resolved = p0_sym
+        else:
+            p0_resolved = qualified_symbols(p0_sym, self.scope)[-1]
+        if isinstance(p1_sym, Symbol):
+            p1_resolved = p1_sym
+        else:
+            p1_resolved = qualified_symbols(p1_sym, self.scope)[-1]
+        assert isinstance(p0_resolved, Symbol)
+        assert isinstance(p1_resolved, Symbol)
+        p0_t = p0_resolved.typ
+        p1_t = p1_resolved.typ
         port_scope0 = p0_t.scope
         port_scope1 = p1_t.scope
         dtype_sym0 = port_scope0.find_ctor().param_symbols()[0]
@@ -319,8 +333,8 @@ class PortConnector(IrVisitor):
         dtype1 = dtype_sym1.typ
         if not dtype0.is_same(dtype1):
             assert False
-        new0 = self._find_move_src_for_port(p0_sym)
-        new1 = self._find_move_src_for_port(p1_sym)
+        new0 = self._find_move_src_for_port(p0_resolved)
+        new1 = self._find_move_src_for_port(p1_resolved)
         assert isinstance(new0, New) and isinstance(new1, New)
         dir0 = new0.args[1][1]
         dir1 = new1.args[1][1]
@@ -337,6 +351,8 @@ class PortConnector(IrVisitor):
                 port_assign_call = self._make_assign_call(p1_sym, p0_sym)
             elif dir0.value == 'out' and dir1.value == 'out':
                 port_assign_call = self._make_assign_call(p0_sym, p1_sym)
+                # Mark parent output port as thru-connected (read-only from parent side)
+                self._mark_thru(p0_sym)
             else:
                 fail(self.current_stm, Errors.THRU_DIRECTION_MISMATCH, [dir0.value, dir1.value])
         # Append to block
@@ -346,16 +362,26 @@ class PortConnector(IrVisitor):
 
     def _make_assign_call(self, p0_sym, p1_sym):
         """Create a port assign call."""
-        p0_t = p0_sym.typ
-        p1_t = p1_sym.typ
+        if isinstance(p0_sym, Symbol):
+            p0_t = p0_sym.typ
+            p0_name = p0_sym.name
+        else:
+            p0_t = qualified_symbols(p0_sym, self.scope)[-1].typ
+            p0_name = p0_sym.name
+        if isinstance(p1_sym, Symbol):
+            p1_t = p1_sym.typ
+            p1_name = p1_sym.name
+        else:
+            p1_t = qualified_symbols(p1_sym, self.scope)[-1].typ
+            p1_name = p1_sym.name
         port_scope0 = p0_t.scope
         port_scope1 = p1_t.scope
         rd_sym = port_scope1.find_sym('rd')
-        port_rd = Attr(Temp(p1_sym.name), rd_sym.name)
+        port_rd = Attr(Temp(p1_name), rd_sym.name)
         port_rd_call = Call(func=port_rd, args=(), kwargs={})
         lambda_sym = self._make_lambda(port_rd_call)
         assign_sym = port_scope0.find_sym('assign')
-        port_assign = Attr(Temp(p0_sym.name), assign_sym.name)
+        port_assign = Attr(Temp(p0_name), assign_sym.name)
         port_assign_call = Call(func=port_assign,
                                     args=(('fn', Temp(lambda_sym.name)),), kwargs={})
         return port_assign_call
@@ -383,3 +409,23 @@ class PortConnector(IrVisitor):
                 lambda_scope.add_free_sym(sym)
         self.scope.add_tag('enclosure')
         return scope_sym
+
+    def _mark_thru(self, port_sym):
+        """Mark a port symbol as thru-connected.
+
+        PortTypeProp has not yet run when PortConnector executes, so the symbol
+        still carries ObjectType rather than PortType. We tag the symbol so that
+        PortTypeProp can later propagate the thru flag into the PortType attrs.
+        """
+        if isinstance(port_sym, Symbol):
+            sym = port_sym
+        else:
+            # port_sym is an Attr node from object-level thru
+            sym = qualified_symbols(port_sym, self.scope)[-1]
+        if isinstance(sym, Symbol):
+            if sym.typ.is_port():
+                # PortType already available — update it directly
+                sym.typ = sym.typ.clone(thru=True)
+            else:
+                # ObjectType: tag the symbol so PortTypeProp picks it up later
+                sym.add_tag('thru')
