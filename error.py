@@ -52,6 +52,17 @@ def make_compile_options(casename, casefile_path, err_options, quiet_level):
     return options
 
 
+def _read_test_config(casefile_path):
+    """Read optional # CONFIG {...} line from the test file (line 2)."""
+    import json as _json
+    with open(casefile_path, 'r') as f:
+        f.readline()  # skip line 1 (expected error message)
+        second_line = f.readline().rstrip('\n')
+    if second_line.startswith('# CONFIG '):
+        return _json.loads(second_line[len('# CONFIG '):])
+    return None
+
+
 def error_test(casefile_path, err_options):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
@@ -62,6 +73,10 @@ def error_test(casefile_path, err_options):
             sys.exit(0)
         expected_msg = first_line.split('#')[1].rstrip('\n')
     options = make_compile_options(casename, casefile_path, err_options, env.QUIET_ERROR)
+    test_config = _read_test_config(casefile_path)
+    if test_config and not options.config:
+        import json as _json2
+        options.config = _json2.dumps(test_config)
     try:
         compile_main(casefile_path, options)
     except AssertionError:
