@@ -386,6 +386,7 @@ class TypePropagation(IrVisitor):
         self.typed = []
         self.pure_type_inferrer = PureFuncTypeInferrer()
         self.worklist = deque(scopes)
+        rejected_since_progress = set()
         while self.worklist:
             scope = self.worklist.popleft()
             logger.debug(f"{self.__class__.__name__}.process {scope.name}")
@@ -408,12 +409,25 @@ class TypePropagation(IrVisitor):
                 self.process(scope)
             except RejectPropagation as r:
                 logger.debug(r)
+                if scope in rejected_since_progress:
+                    # Full cycle with no progress — worklist is stuck
+                    self._raise_stuck_error(rejected_since_progress)
+                rejected_since_progress.add(scope)
                 self.worklist.append(scope)
                 continue
+            rejected_since_progress.clear()
             logger.debug(f"{scope.name} is typed")
             assert scope not in self.typed
             self.typed.append(scope)
         return self.typed, self._old_scopes
+
+    def _raise_stuck_error(self, rejected_scopes):
+        from ..common.errors import CompileError
+        scope_names = ', '.join(s.name for s in rejected_scopes)
+        raise CompileError(
+            f"Type propagation cannot make progress; "
+            f"unresolvable scope(s): {scope_names}"
+        )
 
     def process(self, scope):
         """Override IrVisitor.process to iterate block.stms."""

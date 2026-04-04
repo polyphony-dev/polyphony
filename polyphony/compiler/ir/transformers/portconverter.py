@@ -82,6 +82,19 @@ class PortTypeProp(TypePropagation):
             return 'any'
         return ''
 
+    def _raise_stuck_error(self, rejected_scopes):
+        """Emit a port-specific error when type propagation is stuck."""
+        # Find the first port method call with unresolved receiver
+        for scope in rejected_scopes:
+            for sym in scope.symbols.values():
+                sym_t = sym.typ
+                if sym_t.has_scope() and sym_t.scope.is_port() and not sym_t.is_port():
+                    info = (env.scope_file_map.get(scope, ''), scope.lineno)
+                    fail(info, Errors.PORT_TYPE_UNRESOLVABLE, [sym.orig_name()])
+                    return
+        # Fallback to generic error
+        super()._raise_stuck_error(rejected_scopes)
+
     def visit_Call(self, ir):
         callee_scope = _get_callee_scope(ir, self.scope)
         if callee_scope.is_method() and callee_scope.parent.is_port():

@@ -85,6 +85,7 @@ class Errors(Enum):
     SUBMODULE_INTERNAL_FIELD_ACCESS = 925
     SUBMODULE_OUTPUT_PORT_WRITE = 926
     SUBMODULE_INPUT_PORT_READ = 927
+    PORT_TYPE_UNRESOLVABLE = 928
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -200,6 +201,7 @@ ERROR_MESSAGES = {
     Errors.SUBMODULE_INTERNAL_FIELD_ACCESS: "Cannot access internal field '{}' of submodule '{}'; use Port-based communication instead",
     Errors.SUBMODULE_OUTPUT_PORT_WRITE: "Cannot write to submodule's output port '{}'",
     Errors.SUBMODULE_INPUT_PORT_READ: "Cannot read from submodule's input port '{}'",
+    Errors.PORT_TYPE_UNRESOLVABLE: "Port type of '{}' cannot be resolved; protocol modules (e.g. Handshake) must be used as fields of a @module class, not as top-level instances",
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
