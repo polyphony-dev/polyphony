@@ -83,6 +83,8 @@ class Errors(Enum):
     THRU_OUTPUT_WRITE_FORBIDDEN = 918
     SUBMODULE_PORT_WRITE_FORBIDDEN = 919
     SUBMODULE_INTERNAL_FIELD_ACCESS = 925
+    SUBMODULE_OUTPUT_PORT_WRITE = 926
+    SUBMODULE_INPUT_PORT_READ = 927
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -196,6 +198,8 @@ ERROR_MESSAGES = {
     Errors.THRU_OUTPUT_WRITE_FORBIDDEN: "Cannot write to thru'd output port '{}'",
     Errors.SUBMODULE_PORT_WRITE_FORBIDDEN: "Cannot write to submodule port '{}' from parent module",
     Errors.SUBMODULE_INTERNAL_FIELD_ACCESS: "Cannot access internal field '{}' of submodule '{}'; use Port-based communication instead",
+    Errors.SUBMODULE_OUTPUT_PORT_WRITE: "Cannot write to submodule's output port '{}'",
+    Errors.SUBMODULE_INPUT_PORT_READ: "Cannot read from submodule's input port '{}'",
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",

@@ -594,6 +594,8 @@ class PortAccessChecker(IrVisitor):
     """Check port access control rules.
 
     - thru'd output ports cannot be written from parent side (wr, assign)
+    - submodule's output ports cannot be written from parent (wr, assign)
+    - submodule's input ports cannot be read from parent (rd)
     """
 
     def visit_Call(self, ir):
@@ -604,7 +606,7 @@ class PortAccessChecker(IrVisitor):
         if not parent_scope.is_port():
             return
         method_name = callee_scope.base_name
-        if method_name not in ('wr', 'assign'):
+        if method_name not in ('wr', 'assign', 'rd'):
             return
         # Get the port symbol being accessed
         port_sym = self._get_port_sym(ir.func)
@@ -613,21 +615,56 @@ class PortAccessChecker(IrVisitor):
         port_t = port_sym.typ
         if not port_t.is_port():
             return
-        # Check thru'd output write
-        if port_t.thru:
-            fail(self.current_stm, Errors.THRU_OUTPUT_WRITE_FORBIDDEN, [port_sym.orig_name()])
-        # Check private submodule port write
-        if self._is_private_submodule_port(port_sym):
-            fail(self.current_stm, Errors.SUBMODULE_PORT_WRITE_FORBIDDEN, [port_sym.orig_name()])
+        if method_name in ('wr', 'assign'):
+            # Check thru'd output write
+            if port_t.thru:
+                fail(self.current_stm, Errors.THRU_OUTPUT_WRITE_FORBIDDEN, [port_sym.orig_name()])
+            # Check private submodule port write
+            if self._is_private_submodule_port(port_sym):
+                fail(self.current_stm, Errors.SUBMODULE_PORT_WRITE_FORBIDDEN, [port_sym.orig_name()])
+            # Check writing to submodule's output port
+            if port_t.direction == 'output' and self._is_submodule_port(ir.func):
+                fail(self.current_stm, Errors.SUBMODULE_OUTPUT_PORT_WRITE, [port_sym.orig_name()])
+        elif method_name == 'rd':
+            # Check reading from submodule's input port
+            if port_t.direction == 'input' and self._is_submodule_port(ir.func):
+                fail(self.current_stm, Errors.SUBMODULE_INPUT_PORT_READ, [port_sym.orig_name()])
+
+    def _is_submodule_port(self, func_ir):
+        """Check if the port access goes through a submodule instance.
+
+        After inlining, a direct member port (e.g. self.o.data) has a chain
+        like [self, o, data] with no intermediate submodule.  A submodule's
+        port (e.g. self.sub.hs_out.data) has [self, sub, hs_out, data] where
+        'sub' is a submodule instance — the chain contains more than one
+        module besides self/the testbench root.
+        """
+        if not isinstance(func_ir, Attr):
+            return False
+        exp = func_ir.exp  # the expression before .wr()/.rd()
+        qsyms = qualified_symbols(exp, self.scope)
+        if not qsyms:
+            return False
+        # Count module instances in the chain (excluding the root self/testbench)
+        module_count = 0
+        for i, s in enumerate(qsyms):
+            if not isinstance(s, Symbol):
+                continue
+            if i == 0:
+                continue  # skip root (self / testbench instance)
+            if s.typ.is_object() and s.typ.scope and s.typ.scope.is_module():
+                module_count += 1
+        # If there are 2+ module instances after the root, the access goes
+        # through a submodule (e.g. sub.hs_out = 2 modules).
+        # If there's only 1 (e.g. o = inlined Handshake), it's a direct member.
+        return module_count >= 2
 
     def _is_private_submodule_port(self, port_sym):
         """Check if port is a private port of a different module."""
         port_name = port_sym.orig_name()
         if not port_name.startswith('_'):
             return False
-        # Find the module that owns the port
         port_owner = port_sym.typ.port_owner()
-        # Find the module that contains the current scope (worker)
         current_module = self.scope
         while current_module and not current_module.is_module():
             current_module = current_module.parent
