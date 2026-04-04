@@ -559,15 +559,33 @@ class Simulator(object):
             self.observer.close()
         current_simulator = None
 
+    def _set_clkrst_all(self, model, name: str, val: int):
+        """Set clk/rst register value on a core model and all its sub-models.
+
+        Sub-modules have their own clk/rst Reg objects (independent of the
+        parent's).  HDL instantiation wires them together via .clk(clk) /
+        .rst(rst) port connections; the Python simulator mimics this by
+        propagating the value down the model hierarchy each tick.
+        """
+        reg = getattr(model, name, None)
+        if reg is not None:
+            reg.val = val
+        for v in vars(model).values():
+            if isinstance(v, Model):
+                sub_core = super(Model, v).__getattribute__("__model")
+                self._set_clkrst_all(sub_core, name, val)
+
     def _period(self, count=1):
         for i in range(count):
             for model in self.models:
-                model.clk.val = 1
+                core = super(Model, model).__getattribute__("__model") if isinstance(model, Model) else model
+                self._set_clkrst_all(core, 'clk', 1)
             for evaluator in self.evaluators:
                 evaluator.eval()
             self.clock_time += 1
             for model in self.models:
-                model.clk.val = 0
+                core = super(Model, model).__getattribute__("__model") if isinstance(model, Model) else model
+                self._set_clkrst_all(core, 'clk', 0)
             if self.observer:
                 self.observer.on_cycle(self.clock_time)
 
@@ -575,10 +593,12 @@ class Simulator(object):
         if self.observer:
             self.observer.on_reset_start()
         for model in self.models:
-            model.rst.val = 1
+            core = super(Model, model).__getattribute__("__model") if isinstance(model, Model) else model
+            self._set_clkrst_all(core, 'rst', 1)
         self._period(count)
         for model in self.models:
-            model.rst.val = 0
+            core = super(Model, model).__getattribute__("__model") if isinstance(model, Model) else model
+            self._set_clkrst_all(core, 'rst', 0)
         self.clock_time = 0
         if self.observer:
             self.observer.on_reset_done(self.clock_time)
@@ -604,23 +624,39 @@ class ModelEvaluator(AHDLVisitor):
         return super().visit(ahdl)
 
     def eval(self):
-        for task in self.model._tasks:
-            self.visit(task)
+        # Evaluate tasks (FSMs) for the top model and all sub-models.
+        # Tasks reference signals by bare names that are local to their
+        # own (sub)model, so swap self.model while visiting each one.
+        top = self.model
+        models = self._collect_model(top)
+        for m in models:
+            self.model = m
+            for task in m._tasks:
+                self.visit(task)
+        self.model = top
         self._update_regs()
-        self._eval_decls()
+        self._eval_decls(models)
+        self.model = top
 
-    def _eval_decls(self):
+    def _eval_decls(self, models=None):
+        if models is None:
+            models = [self.model]
+        top = self.model
         self.updated_sigs.add(None)
-        _max_iter = max(len(self.model._decls) + 1, MIN_EVAL_DECLS_ITERATIONS)
+        total_decls = sum(len(m._decls) for m in models)
+        _max_iter = max(total_decls + 1, MIN_EVAL_DECLS_ITERATIONS)
         while self.updated_sigs:
             self.updated_sigs.clear()
-            for decl in self.model._decls:
-                self.visit(decl)
+            for m in models:
+                self.model = m
+                for decl in m._decls:
+                    self.visit(decl)
             _max_iter -= 1
             if _max_iter <= 0:
                 import warnings
-                warnings.warn(f'_eval_decls: iteration limit reached for {self.model}')
+                warnings.warn(f'_eval_decls: iteration limit reached for {top}')
                 break
+        self.model = top
 
     def _find_model(self, ahdl):
         assert isinstance(ahdl, AHDL_VAR)
@@ -1034,7 +1070,7 @@ class SimulationModelBuilder(object):
             setattr(model, sig.name, sub)
 
         model.hdlmodule = hdlmodule
-        if is_top:  # isinstance(hdlmodule, HDLModule):
+        if isinstance(hdlmodule, HDLModule):
             from .compiler.ahdl.ahdlutils import toposort_decls
             model._tasks = hdlmodule.tasks
             model._decls = toposort_decls(hdlmodule.decls)

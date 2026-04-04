@@ -57,6 +57,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._func_param_map: dict[str, str] = {}
         self._name_to_cname: dict[str, str] = {}  # raw signal name -> C-safe name
         self._indent: int = 1  # current indentation level (1 = inside function body)
+        self._scope_prefix: str = ''  # prefix for sub-scope task/decl emission
 
     def _emit(self, line: str):
         """Append a line with current indentation."""
@@ -177,6 +178,16 @@ class AHDLToCTranspiler(AHDLVisitor):
                     reg_list.append((cname, sig))
                 else:
                     net_list.append((cname, sig))
+            elif sig.is_reg() or sig.is_regarray():
+                # The same flat cname was already registered (as a parent
+                # connector net that aliases this sub-scope reg).  Promote
+                # to reg so the _next slot exists for sequential writes.
+                for i, (nc, nsig) in enumerate(net_list):
+                    if nc == cname:
+                        net_list.pop(i)
+                        reg_list.append((cname, sig))
+                        break
+                self._name_to_cname[raw] = cname
             # Skip subscope ports that would overwrite a parent port
             # with the same name (e.g. inlinelib Channel's clk/rst).
             if prefix and any(n == sig.name for n, _ in port_names):
@@ -235,26 +246,37 @@ class AHDLToCTranspiler(AHDLVisitor):
         else:
             hdl_name = raw_name
 
-        # Check constant map with hierarchical name — return #define'd macro name
+        # Prepend scope prefix (when emitting a sub-scope's tasks/decls
+        # inside the parent module's C function body).
+        prefixed_name = f'{self._scope_prefix}{hdl_name}' if self._scope_prefix else hdl_name
+
+        # Check constant map — prefer prefixed, then bare, then raw.
+        if prefixed_name in self._const_map:
+            return f'C_{_c_safe_name(prefixed_name)}'
         if hdl_name in self._const_map:
             return f'C_{_c_safe_name(hdl_name)}'
         if raw_name in self._const_map:
             return f'C_{_c_safe_name(raw_name)}'
 
-        cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
+        cname = self._name_to_cname.get(prefixed_name, _c_safe_name(prefixed_name))
         if ahdl.ctx == Ctx.STORE and sig.is_reg():
             return f's[S_{cname}_next]'
         return f's[S_{cname}]'
+
+    def _var_cname(self, ahdl_var) -> str:
+        """Resolve the C-side signal name for an AHDL_VAR, honoring scope prefix."""
+        if len(ahdl_var.vars) > 1:
+            hdl_name = '_'.join(s.name for s in ahdl_var.vars)
+        else:
+            hdl_name = ahdl_var.vars[-1].name
+        prefixed = f'{self._scope_prefix}{hdl_name}' if self._scope_prefix else hdl_name
+        return self._name_to_cname.get(prefixed, _c_safe_name(prefixed))
 
     def _op_is_unsigned(self, args):
         """Return True if any AHDL_VAR operand is unsigned (Verilog rule)."""
         for arg in args:
             if isinstance(arg, AHDL_VAR):
-                sig = arg.vars[-1]
-                cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
-                if len(arg.vars) > 1:
-                    hdl_name = '_'.join(s.name for s in arg.vars)
-                    cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
+                cname = self._var_cname(arg)
                 if not self._is_signed(cname):
                     return True
         return False
@@ -262,11 +284,7 @@ class AHDLToCTranspiler(AHDLVisitor):
     def _left_operand_is_unsigned(self, arg):
         """Check if the left operand of a shift is unsigned."""
         if isinstance(arg, AHDL_VAR):
-            sig = arg.vars[-1]
-            cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
-            if len(arg.vars) > 1:
-                hdl_name = '_'.join(s.name for s in arg.vars)
-                cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
+            cname = self._var_cname(arg)
             return not self._is_signed(cname)
         return False  # Default to signed for safety
 
@@ -335,12 +353,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         return self.visit_AHDL_VAR(ahdl)
 
     def visit_AHDL_SUBSCRIPT(self, ahdl):
-        # Build hierarchical name from memvar.vars
-        if len(ahdl.memvar.vars) > 1:
-            hdl_name = '_'.join(s.name for s in ahdl.memvar.vars)
-        else:
-            hdl_name = ahdl.memvar.vars[-1].name
-        cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
+        cname = self._var_cname(ahdl.memvar)
         offset = self.visit(ahdl.offset)
         sig = ahdl.memvar.vars[-1]
         if ahdl.ctx == Ctx.STORE and (sig.is_reg() or sig.is_regarray()):
@@ -534,12 +547,13 @@ class AHDLToCTranspiler(AHDLVisitor):
             parts.append(self._emit_function_def(func))
             parts.append('')
 
-        # module_eval_tasks
+        # module_eval_tasks — include tasks from all nested sub-scopes
+        # (flattened into the parent module's C code, with each sub-scope's
+        # signal references prefixed by its instance path).
         parts.append('void module_eval_tasks(int64_t* s) {')
         self._lines = []
         self._indent = 1
-        for task in hdlscope.tasks:
-            self.visit(task)
+        self._emit_scope_tasks(hdlscope, '')
         parts.extend(self._lines)
         parts.append('}')
         parts.append('')
@@ -550,9 +564,9 @@ class AHDLToCTranspiler(AHDLVisitor):
         parts.append('}')
         parts.append('')
 
-        # module_eval_decls
+        # module_eval_decls — include decls from all nested sub-scopes.
         from polyphony.simulator import MIN_EVAL_DECLS_ITERATIONS
-        num_decls = len(hdlscope.decls)
+        num_decls = self._count_all_decls(hdlscope)
         max_iter = max(num_decls + 1, MIN_EVAL_DECLS_ITERATIONS)
         parts.append('int module_eval_decls(int64_t* s) {')
         parts.append('    int updated = 1, iter = 0;')
@@ -560,8 +574,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         parts.append('        updated = 0;')
         self._lines = []
         self._indent = 2
-        for decl in toposort_decls(hdlscope.decls):
-            self.visit(decl)
+        self._emit_scope_decls(hdlscope, '')
         parts.extend(self._lines)
         parts.append('        iter++;')
         parts.append('    }')
@@ -570,6 +583,34 @@ class AHDLToCTranspiler(AHDLVisitor):
 
         c_source = '\n'.join(parts) + '\n'
         return c_source, sig_map, port_map, sig_count
+
+    def _emit_scope_tasks(self, scope, prefix: str):
+        saved = self._scope_prefix
+        self._scope_prefix = prefix
+        if hasattr(scope, 'tasks'):
+            for task in scope.tasks:
+                self.visit(task)
+        self._scope_prefix = saved
+        for sub_sig, sub_scope in scope.subscopes.items():
+            sub_prefix = f'{prefix}{_c_safe_name(sub_sig.name)}_'
+            self._emit_scope_tasks(sub_scope, sub_prefix)
+
+    def _emit_scope_decls(self, scope, prefix: str):
+        saved = self._scope_prefix
+        self._scope_prefix = prefix
+        if hasattr(scope, 'decls'):
+            for decl in toposort_decls(scope.decls):
+                self.visit(decl)
+        self._scope_prefix = saved
+        for sub_sig, sub_scope in scope.subscopes.items():
+            sub_prefix = f'{prefix}{_c_safe_name(sub_sig.name)}_'
+            self._emit_scope_decls(sub_scope, sub_prefix)
+
+    def _count_all_decls(self, scope) -> int:
+        n = len(scope.decls) if hasattr(scope, 'decls') else 0
+        for _, sub_scope in scope.subscopes.items():
+            n += self._count_all_decls(sub_scope)
+        return n
 
     def _emit_update_regs(self, hdlscope):
         lines = []
