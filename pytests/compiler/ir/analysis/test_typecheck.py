@@ -4,7 +4,7 @@ from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.analysis.typecheck import (
     TypeChecker, EarlyTypeChecker, EarlyRestrictionChecker,
     RestrictionChecker, LateRestrictionChecker, AssertionChecker,
-    PortAssignChecker, SynthesisParamChecker,
+    PortAccessChecker, PortAssignChecker, SynthesisParamChecker,
 )
 from polyphony.compiler.common.env import env
 from polyphony.compiler.common.common import src_texts
@@ -5021,4 +5021,118 @@ ret @return
         TypeChecker().process(scope)
 
 
+# =========================================================
+# PortAccessChecker._is_submodule_port
+# =========================================================
 
+class TestIsSubmodulePort:
+    """Tests for PortAccessChecker._is_submodule_port.
+
+    Builds scope/symbol/Attr chains to simulate post-inlining IR and
+    verifies that the method correctly distinguishes:
+    - direct port access (no intermediate module) → False
+    - single-level submodule port access → True (direction check applies)
+    - multi-level chain (inlined from submodule code) → False
+    """
+
+    @staticmethod
+    def _Type():
+        from polyphony.compiler.ir.types.type import Type
+        return Type
+
+    @staticmethod
+    def _Scope():
+        from polyphony.compiler.ir.scope import Scope
+        return Scope
+
+    def _make_checker(self, scope):
+        checker = PortAccessChecker()
+        checker.scope = scope
+        return checker
+
+    def _make_module_scope(self, parent, name):
+        """Create a module scope under parent."""
+        return self._Scope().create(parent, name, {'class', 'module', 'instantiated'}, lineno=1)
+
+    def _add_port_sym(self, scope, name):
+        """Add a Port-class symbol (ObjectType pointing to a port scope)."""
+        Scope, Type = self._Scope(), self._Type()
+        port_scope = env.scopes.get('polyphony.io.Port')
+        if port_scope is None:
+            top = env.scopes[env.global_scope_name]
+            port_scope = Scope.create(top, 'Port', {'class', 'port'}, lineno=1)
+        return scope.add_sym(name, set(), Type.object(port_scope))
+
+    def test_direct_port_no_module(self):
+        """self.port.rd() — no intermediate module → False."""
+        Scope, Type = self._Scope(), self._Type()
+        setup_test()
+        top = env.scopes[env.global_scope_name]
+        mod = self._make_module_scope(top, 'M')
+        worker = Scope.create(mod, 'worker', {'function'}, lineno=1)
+
+        worker.add_sym('self', set(), Type.object(mod))
+        port_sym = self._add_port_sym(mod, 'my_port')
+
+        # Attr chain: self.my_port.rd — only port, no module in chain
+        port_attr = Attr(exp=Temp(name='self'), attr=port_sym)
+        func_ir = Attr(exp=port_attr, attr='rd')
+
+        checker = self._make_checker(worker)
+        assert checker._is_submodule_port(func_ir) is False
+
+    def test_one_module_in_chain(self):
+        """self.sub.port.rd() — one submodule → True."""
+        Scope, Type = self._Scope(), self._Type()
+        setup_test()
+        top = env.scopes[env.global_scope_name]
+        parent_mod = self._make_module_scope(top, 'Parent')
+        sub_mod = self._make_module_scope(parent_mod, 'Sub')
+        worker = Scope.create(parent_mod, 'worker', {'function'}, lineno=1)
+
+        worker.add_sym('self', set(), Type.object(parent_mod))
+        sub_sym = parent_mod.add_sym('sub', set(), Type.object(sub_mod))
+        port_sym = self._add_port_sym(sub_mod, 'o')
+
+        # Attr chain: self.sub.o.rd — one module (sub) in chain
+        sub_attr = Attr(exp=Temp(name='self'), attr=sub_sym)
+        port_attr = Attr(exp=sub_attr, attr=port_sym)
+        func_ir = Attr(exp=port_attr, attr='rd')
+
+        checker = self._make_checker(worker)
+        assert checker._is_submodule_port(func_ir) is True
+
+    def test_two_modules_in_chain(self):
+        """self.sub.inner.port.rd() — two modules (inlined) → False."""
+        Scope, Type = self._Scope(), self._Type()
+        setup_test()
+        top = env.scopes[env.global_scope_name]
+        parent_mod = self._make_module_scope(top, 'Parent2')
+        sub_mod = self._make_module_scope(parent_mod, 'Sub2')
+        inner_mod = self._make_module_scope(sub_mod, 'Inner2')
+        worker = Scope.create(parent_mod, 'worker', {'function'}, lineno=1)
+
+        worker.add_sym('self', set(), Type.object(parent_mod))
+        sub_sym = parent_mod.add_sym('sub', set(), Type.object(sub_mod))
+        inner_sym = sub_mod.add_sym('inner', set(), Type.object(inner_mod))
+        port_sym = self._add_port_sym(inner_mod, 'p')
+
+        # Attr chain: self.sub.inner.p.rd — two modules (sub, inner)
+        sub_attr = Attr(exp=Temp(name='self'), attr=sub_sym)
+        inner_attr = Attr(exp=sub_attr, attr=inner_sym)
+        port_attr = Attr(exp=inner_attr, attr=port_sym)
+        func_ir = Attr(exp=port_attr, attr='rd')
+
+        checker = self._make_checker(worker)
+        assert checker._is_submodule_port(func_ir) is False
+
+    def test_non_attr_returns_false(self):
+        """Non-Attr func_ir → False."""
+        Scope = self._Scope()
+        setup_test()
+        top = env.scopes[env.global_scope_name]
+        mod = self._make_module_scope(top, 'M2')
+        worker = Scope.create(mod, 'worker', {'function'}, lineno=1)
+
+        checker = self._make_checker(worker)
+        assert checker._is_submodule_port(Temp(name='x')) is False

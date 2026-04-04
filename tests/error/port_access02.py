@@ -1,4 +1,5 @@
 #Cannot read from submodule's input port 'ready'
+# CONFIG {"flatten_modules":false}
 from polyphony import module, is_worker_running
 from polyphony.io import Port
 from polyphony.modules import Handshake

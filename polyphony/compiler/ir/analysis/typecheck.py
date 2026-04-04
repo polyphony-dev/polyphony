@@ -622,22 +622,28 @@ class PortAccessChecker(IrVisitor):
             # Check private submodule port write
             if self._is_private_submodule_port(port_sym):
                 fail(self.current_stm, Errors.SUBMODULE_PORT_WRITE_FORBIDDEN, [port_sym.orig_name()])
-            # Check writing to submodule's output port
-            if port_t.direction == 'output' and self._is_submodule_port(ir.func):
-                fail(self.current_stm, Errors.SUBMODULE_OUTPUT_PORT_WRITE, [port_sym.orig_name()])
+            # Direction checks only apply in individual (non-flatten) mode.
+            # In flatten mode, submodule methods are inlined into the parent,
+            # making it impossible to distinguish parent-originated accesses
+            # from inlined child code.
+            if not env.config.flatten_modules:
+                if port_t.direction == 'output' and self._is_submodule_port(ir.func):
+                    fail(self.current_stm, Errors.SUBMODULE_OUTPUT_PORT_WRITE, [port_sym.orig_name()])
         elif method_name == 'rd':
-            # Check reading from submodule's input port
-            if port_t.direction == 'input' and self._is_submodule_port(ir.func):
-                fail(self.current_stm, Errors.SUBMODULE_INPUT_PORT_READ, [port_sym.orig_name()])
+            if not env.config.flatten_modules:
+                if port_t.direction == 'input' and self._is_submodule_port(ir.func):
+                    fail(self.current_stm, Errors.SUBMODULE_INPUT_PORT_READ, [port_sym.orig_name()])
 
     def _is_submodule_port(self, func_ir):
-        """Check if the port access goes through a submodule instance.
+        """Check if the port access is a direct submodule port access.
 
-        After inlining, a direct member port (e.g. self.o.data) has a chain
-        like [self, o, data] with no intermediate submodule.  A submodule's
-        port (e.g. self.sub.hs_out.data) has [self, sub, hs_out, data] where
-        'sub' is a submodule instance — the chain contains more than one
-        module besides self/the testbench root.
+        After inlining, this method identifies whether a port method call
+        targets a port owned by a direct submodule of the current module.
+        Only direct submodule port accesses (exactly one non-protocol module
+        in the chain) are subject to direction checks.  Deeper chains
+        (module_count >= 2) originate from inlined submodule methods and
+        should not be checked here — the intermediate module's own code
+        was responsible for the access.
         """
         if not isinstance(func_ir, Attr):
             return False
@@ -645,7 +651,7 @@ class PortAccessChecker(IrVisitor):
         qsyms = qualified_symbols(exp, self.scope)
         if not qsyms:
             return False
-        # Count module instances in the chain (excluding the root self/testbench)
+        # Count non-protocol module instances in the chain (excluding root)
         module_count = 0
         for i, s in enumerate(qsyms):
             if not isinstance(s, Symbol):
@@ -654,10 +660,10 @@ class PortAccessChecker(IrVisitor):
                 continue  # skip root (self / testbench instance)
             if s.typ.is_object() and s.typ.scope and s.typ.scope.is_module():
                 module_count += 1
-        # If there are 2+ module instances after the root, the access goes
-        # through a submodule (e.g. sub.hs_out = 2 modules).
-        # If there's only 1 (e.g. o = inlined Handshake), it's a direct member.
-        return module_count >= 2
+        # Only flag direct submodule access (exactly 1 non-protocol module).
+        # Chains with 2+ modules come from inlined submodule methods — the
+        # access was valid in the original context before inlining.
+        return module_count == 1
 
     def _is_private_submodule_port(self, port_sym):
         """Check if port is a private port of a different module."""
