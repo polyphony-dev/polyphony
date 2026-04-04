@@ -189,7 +189,7 @@ def model_selector_with_argv(models, class_name):
             # and not part of the model selection criteria.
             if inspect.isfunction(a):
                 continue
-            elif isinstance(a, (int, float, bool, str)):
+            elif isinstance(a, (int, float, bool, str, tuple)):
                 args_str.append(str(a))
             elif type(a).__name__ == 'type':
                 args_str.append(a.__name__)
