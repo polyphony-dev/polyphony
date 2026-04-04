@@ -35,7 +35,6 @@ def test():
     m = Top()
     m.data_in.wr(7)
     clksleep(10)
-    print(m.data_in.rd())
+    # Only read output ports — input ports cannot be rd() in Python sim
     print(m.data_out.rd())
-    print(m.sub.i.rd())
     print(m.sub.o.rd())

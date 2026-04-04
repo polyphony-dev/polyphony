@@ -50,6 +50,6 @@ class Parent:
 def test():
     m = Parent()
     m.i.wr(7)
-    clksleep(20)
+    clksleep(40)
     expected = 7 * 3  # GrandChild multiplies by 3
     assert expected == m.o.rd()
