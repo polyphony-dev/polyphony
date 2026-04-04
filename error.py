@@ -74,9 +74,15 @@ def error_test(casefile_path, err_options):
         expected_msg = first_line.split('#')[1].rstrip('\n')
     options = make_compile_options(casename, casefile_path, err_options, env.QUIET_ERROR)
     test_config = _read_test_config(casefile_path)
-    if test_config and not options.config:
+    if test_config:
         import json as _json2
-        options.config = _json2.dumps(test_config)
+        if options.config:
+            # Merge: test-level CONFIG overrides suite-level config
+            merged = _json2.loads(options.config)
+            merged.update(test_config)
+            options.config = _json2.dumps(merged)
+        else:
+            options.config = _json2.dumps(test_config)
     try:
         compile_main(casefile_path, options)
     except AssertionError:

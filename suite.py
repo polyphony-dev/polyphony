@@ -67,37 +67,57 @@ FILES = (
 )
 
 
+_COMMON_IGNORES = (
+    "pure/*",
+    "perform/*",
+    "module/module01.py",
+    "module/module02.py",
+    "module/module03.py",
+    "module/module03.new.py",
+    "module/module07.py",
+    "module/module08.py",
+    "module/module09.py",
+    "module/module10.py",
+    "module/module11.py",
+    "module/module12.py",
+    "module/field01.py",
+    "module/field02.py",
+    "module/field03.py",
+    "module/parameter01.py",
+    "unroll/pipelined_unroll01.py",
+    "chstone/mips/pipelined_mips.py",
+    "error/pure01.py",
+    "error/pure02.py",
+    "error/module_method01.py",
+    "warning/pipeline_resource01.py",
+    "warning/pipeline_resource02.py",
+)
+
 SUITE_CASES = [
+    # flatten mode (default)
     {
-        "config": "{}",
-        "ignores": (
-            "pure/*",
-            "perform/*",
-            "module/module01.py",
-            "module/module02.py",
-            "module/module03.py",
-            "module/module03.new.py",
-            "module/module07.py",
-            "module/module08.py",
-            "module/module09.py",
-            "module/module10.py",
-            "module/module11.py",
-            "module/module12.py",
-            "module/field01.py",
-            "module/field02.py",
-            "module/field03.py",
+        "config": '{"flatten_modules":true}',
+        "ignores": _COMMON_IGNORES + (
             "module/nesting01.py",
             "module/nesting02.py",
             "module/nesting03.py",
             "module/nesting04.py",
-            "module/parameter01.py",
-            "unroll/pipelined_unroll01.py",
-            "chstone/mips/pipelined_mips.py",
-            "error/pure01.py",
-            "error/pure02.py",
-            "error/module_method01.py",
-            "warning/pipeline_resource01.py",
-            "warning/pipeline_resource02.py",
+        ),
+    },
+    # no-flatten mode (individual module compilation)
+    # Only runs module/nesting* and io/ tests — suite only, no error/warning tests
+    {
+        "config": '{"flatten_modules":false}',
+        "dirs": ("module", "io"),
+        "suite_only": True,
+        "ignores": _COMMON_IGNORES + (
+            "module/nesting03.py",    # HDL simulation timeout
+            "module/nesting04.py",    # HDL simulation timeout
+            "module/nesting05.py",    # submodule internal field access error
+            "module/module_arg_mod01.py",  # Compile Error in no-flatten
+            "io/assign07.py",         # thru + no-flatten HDL fail
+            "io/assign08.py",         # thru + no-flatten HDL fail
+            "io/handshake01.py",      # HDL fail in no-flatten
         ),
     },
 ]
@@ -292,7 +312,17 @@ def suite_main():
                 print("NOTE: these files will be ignored")
                 print(ignores)
             options.config = case["config"]
-            results = [p(options, ignores) for p in procs]
+            # Per-case directory override
+            saved_dir = options.dir
+            if "dirs" in case:
+                options.dir = list(case["dirs"])
+            # Per-case proc selection: suite_only skips error/warning tests
+            if case.get("suite_only"):
+                case_procs = (suite,)
+            else:
+                case_procs = procs
+            results = [p(options, ignores) for p in case_procs]
+            options.dir = saved_dir
             fails += sum(results)
     else:
         ignores = []
