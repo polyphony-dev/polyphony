@@ -1077,7 +1077,11 @@ class FlattenModule(IrVisitor):
         arg_t = arg_sym.typ
         worker_scope = arg_t.scope
         assert isinstance(arg, Attr)
-        inst_name = cast(IrNameExp, arg.exp).name
+        # Build a unique instance prefix from the full attribute path
+        # (e.g. self.m1.leaf1.run → "m1_leaf1") to avoid name collisions
+        # when the same submodule class appears under different parents.
+        qnames = cast(IrNameExp, arg.exp).qualified_name
+        inst_name = '_'.join(n for n in qnames if n != env.self_name)
         new_worker = worker_scope.clone(inst_name, "", parent=parent_module, recursive=True)
         if new_worker.is_inlinelib():
             new_worker.del_tag("inlinelib")
