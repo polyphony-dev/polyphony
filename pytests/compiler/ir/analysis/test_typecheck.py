@@ -5050,9 +5050,19 @@ class TestIsSubmodulePort:
         checker.scope = scope
         return checker
 
-    def _make_module_scope(self, parent, name):
-        """Create a module scope under parent."""
-        return self._Scope().create(parent, name, {'class', 'module', 'instantiated'}, lineno=1)
+    def _make_module_scope(self, parent, name, with_worker=True):
+        """Create a module scope under parent.
+
+        By default, adds a dummy worker so the module is treated as a
+        non-protocol module. Set with_worker=False for protocol modules
+        (workerless modules like Handshake).
+        """
+        Scope = self._Scope()
+        mod = Scope.create(parent, name, {'class', 'module', 'instantiated'}, lineno=1)
+        if with_worker:
+            worker = Scope.create(mod, f'{name}_w', {'worker'}, lineno=1)
+            mod.register_worker(worker)
+        return mod
 
     def _add_port_sym(self, scope, name):
         """Add a Port-class symbol (ObjectType pointing to a port scope)."""
@@ -5136,3 +5146,55 @@ class TestIsSubmodulePort:
 
         checker = self._make_checker(worker)
         assert checker._is_submodule_port(Temp(name='x')) is False
+
+    def test_protocol_module_in_chain(self):
+        """self.proto.port.rd() — workerless protocol module → False.
+
+        A workerless module is a protocol module (e.g. Handshake) whose
+        ports are hoisted into the parent by hdlgen, so direction checks
+        should not apply.
+        """
+        Scope, Type = self._Scope(), self._Type()
+        setup_test()
+        top = env.scopes[env.global_scope_name]
+        parent_mod = self._make_module_scope(top, 'ParentP')
+        proto_mod = self._make_module_scope(parent_mod, 'Proto', with_worker=False)
+        worker = Scope.create(parent_mod, 'worker', {'function'}, lineno=1)
+
+        worker.add_sym('self', set(), Type.object(parent_mod))
+        proto_sym = parent_mod.add_sym('proto', set(), Type.object(proto_mod))
+        port_sym = self._add_port_sym(proto_mod, 'port')
+
+        # Attr chain: self.proto.port.rd — protocol module excluded from count
+        proto_attr = Attr(exp=Temp(name='self'), attr=proto_sym)
+        port_attr = Attr(exp=proto_attr, attr=port_sym)
+        func_ir = Attr(exp=port_attr, attr='rd')
+
+        checker = self._make_checker(worker)
+        assert checker._is_submodule_port(func_ir) is False
+
+    def test_submodule_through_protocol(self):
+        """self.sub.proto.port.rd() — non-proto submodule + protocol
+        child → True.  Matches the `Top→Sub→Handshake.port` pattern."""
+        Scope, Type = self._Scope(), self._Type()
+        setup_test()
+        top = env.scopes[env.global_scope_name]
+        parent_mod = self._make_module_scope(top, 'ParentSP')
+        sub_mod = self._make_module_scope(parent_mod, 'SubSP')
+        proto_mod = self._make_module_scope(sub_mod, 'ProtoSP', with_worker=False)
+        worker = Scope.create(parent_mod, 'worker', {'function'}, lineno=1)
+
+        worker.add_sym('self', set(), Type.object(parent_mod))
+        sub_sym = parent_mod.add_sym('sub', set(), Type.object(sub_mod))
+        proto_sym = sub_mod.add_sym('proto', set(), Type.object(proto_mod))
+        port_sym = self._add_port_sym(proto_mod, 'port')
+
+        # Chain: self.sub.proto.port.rd — sub counts (has worker), proto
+        # doesn't (protocol) → module_count==1 → True
+        sub_attr = Attr(exp=Temp(name='self'), attr=sub_sym)
+        proto_attr = Attr(exp=sub_attr, attr=proto_sym)
+        port_attr = Attr(exp=proto_attr, attr=port_sym)
+        func_ir = Attr(exp=port_attr, attr='rd')
+
+        checker = self._make_checker(worker)
+        assert checker._is_submodule_port(func_ir) is True

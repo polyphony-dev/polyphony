@@ -644,6 +644,11 @@ class PortAccessChecker(IrVisitor):
         (module_count >= 2) originate from inlined submodule methods and
         should not be checked here — the intermediate module's own code
         was responsible for the access.
+
+        Protocol modules (modules with no workers, e.g. Handshake or a
+        workerless @module class used as a port-bundle) are hoisted into
+        the parent by hdlgen, so they are excluded from the count — their
+        ports effectively belong to the containing non-protocol module.
         """
         if not isinstance(func_ir, Attr):
             return False
@@ -659,6 +664,11 @@ class PortAccessChecker(IrVisitor):
             if i == 0:
                 continue  # skip root (self / testbench instance)
             if s.typ.is_object() and s.typ.scope and s.typ.scope.is_module():
+                mod_scope = s.typ.scope
+                # A workerless module is a protocol module that will be
+                # hoisted into its parent by hdlgen; don't count it.
+                if mod_scope.is_class() and not mod_scope.as_class().workers:
+                    continue
                 module_count += 1
         # Only flag direct submodule access (exactly 1 non-protocol module).
         # Chains with 2+ modules come from inlined submodule methods — the
