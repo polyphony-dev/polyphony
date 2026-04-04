@@ -111,13 +111,9 @@ SUITE_CASES = [
         "dirs": ("module", "io"),
         "suite_only": True,
         "ignores": _COMMON_IGNORES + (
-            "module/nesting03.py",    # HDL simulation timeout
-            "module/nesting04.py",    # HDL simulation timeout
-            "module/nesting05.py",    # submodule internal field access error
             "module/module_arg_mod01.py",  # Compile Error in no-flatten
             "io/assign07.py",         # thru + no-flatten HDL fail
             "io/assign08.py",         # thru + no-flatten HDL fail
-            "io/handshake01.py",      # HDL fail in no-flatten
         ),
     },
 ]

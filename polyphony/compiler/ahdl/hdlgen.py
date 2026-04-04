@@ -222,10 +222,14 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         for instance_sig, subscope in self.hdlmodule.subscopes.items():
             if not isinstance(subscope, HDLModule):
                 continue
-            if self._is_inlinelib_module(subscope):
-                self._process_inlinelib_subscope(instance_sig, subscope)
-            elif self._is_protocol_module(subscope):
+            # Check protocol first: an @inlinelib module with no FSMs is
+            # actually a protocol module (e.g. Handshake).  The inlinelib
+            # handler merges FSMs/decls but does not hoist ports as parent
+            # I/O, which is wrong for port-bundle modules.
+            if self._is_protocol_module(subscope):
                 self._process_protocol_subscope(instance_sig, subscope)
+            elif self._is_inlinelib_module(subscope):
+                self._process_inlinelib_subscope(instance_sig, subscope)
             else:
                 self._process_regular_subscope(instance_sig, subscope)
 
